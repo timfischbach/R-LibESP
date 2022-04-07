@@ -7,7 +7,7 @@ Functions:
 - Data Transmission to Update-server for stats.
 
 TO DO:
-- mDNS (auto redirect to config)
+- Redirection (Log In WIFI)
 */
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
@@ -17,13 +17,14 @@ TO DO:
 #include <ESP8266WebServer.h>
 #include <EEPROM.h>
 #include <ESP8266mDNS.h>
-#include "esp8266lib.h"
-#include "config.h"
+#include "R-Lib8266.h"
 
 const String LIBVERSION = "v1.0.0a";
 
-String strinit, initlink, binlink, SSID, PASSWORD, content, st;
+String strinit, initlink, binlink, SSID, PASSWORD, content, st, DEVICENAME, VERSION, dllink, devlink, DEVTAG;
 int serverstatus, statusCode;
+bool beta = false;
+bool dev = false;
 
 ESP8266WebServer server(80);
 WiFiClient updatewificlient;
@@ -32,7 +33,7 @@ HTTPClient http;
 String CheckUpdate();
 String split(String s, char parser, int index);
 String UpdateLoop();
-void dataTransmission();
+String dataTransmission();
 void connectWIFI(String ssid, String passwd);
 bool checkWIFI();
 void resetWIFI();
@@ -43,6 +44,24 @@ void createWebServer();
 String getLibVersion();
 void connectWIFIUserHandle();
 void endWIFIUser();
+String getLibVersion();
+void connectWIFIUserHandle();
+void endWIFIUser();
+void setDeviceName(String DevName);
+String getDeviceName();
+void setVersion(String ver);
+String getVersion();
+void setDlLink(String DLL);
+String getDlLink();
+void setDevLink(String DEL);
+String getDevLink();
+void setDevTag(String DTAG);
+String getDevTag();
+void setBetaState(bool sbeta);
+bool getBetaState();
+void setDevState(bool sdev);
+bool getDevState();
+bool varCheck();
 
 void update_started()
 {
@@ -90,116 +109,133 @@ String split(String s, char parser, int index)
 
 String CheckUpdate()
 {
-  Serial.println("[Update] Update Check Started!\r");
-  Serial.println("[Update] Creating initlink...");
-  if (beta == false and dev == false)
+  if (varCheck() == false)
   {
-    Serial.println("[Update] Stable selected");
-    initlink = dllink + "init";
-  }
-  else if (dev == true)
-  {
-    Serial.println("[Update] Developer mode selected");
-    Serial.println("[Update] Downloading from Devtag!");
-    binlink = devlink + DEVTAG + "/firmware.bin";
-    Serial.println("[Update] Link created: " + binlink);
-    return "UPDATE_AVAILABLE";
-  }
-  else if (beta == true)
-  {
-    Serial.println("[Update] Beta selected");
-    initlink = dllink + "beta/init";
-  }
-
-  Serial.println("[Update] Link created: " + initlink);
-  http.begin(updatewificlient, initlink);
-  Serial.println("[Update] Connecting to Update Server...");
-  serverstatus = http.GET();
-  if (serverstatus == 200)
-  {
-    strinit = http.getString();
-    http.end();
-    String name = split(strinit, '!', 0);
-    String filename = split(strinit, '!', 1);
-    String newversion = split(strinit, '!', 2);
-    Serial.println("[Update] Successfully connected to the update server!\r");
-    Serial.println("[Update] ***READING UPDATE INFOS***");
-    Serial.println("[Update] Name of the device: " + name);
-    Serial.println("[Update] Update Version: " + newversion);
-    Serial.println("[Update] ***READING SYSTEM SETTINGS***");
-    Serial.println("[Update] Device Name: " + DEVICENAME);
-    Serial.println("[Update] Installed Version: " + VERSION);
-    Serial.println("[Update] Beta enabled: " + String(beta));
-    Serial.println("[Update] Dev enabled: " + String(dev));
-    if (dev == true)
-    {
-      Serial.println("[Update] DevTag: " + DEVTAG);
-    }
-    if (VERSION == newversion)
-    {
-      Serial.println("[Update] No Update available!\r");
-      return "NO_UPDATE_AVAILABLE";
-    }
-    else
-    {
-      Serial.println("[Update] Update available!");
-      Serial.println("[Update] Creating DLLink: ");
-      if (beta == true)
-      {
-        binlink = dllink + "beta/" + filename + newversion + ".bin";
-      }
-      else
-      {
-        binlink = dllink + filename + newversion + ".bin";
-      }
-      Serial.println("[UPDATE] " + binlink);
-      return "UPDATE_AVAILABLE";
-    }
+    return "NO_VARIABLES_SET";
   }
   else
   {
-    http.end();
-    Serial.println("[Update] ERROR: UPDATE SERVER DOWN!");
-    return "UPDATE_SERVER_DOWN";
+    Serial.println("[Update] Update Check Started!\r");
+    Serial.println("[Update] Creating initlink...");
+    if (beta == false and dev == false)
+    {
+      Serial.println("[Update] Stable selected");
+      initlink = dllink + "init";
+    }
+    else if (dev == true)
+    {
+      Serial.println("[Update] Developer mode selected");
+      Serial.println("[Update] Downloading from Devtag!");
+      binlink = devlink + DEVTAG + "/firmware.bin";
+      Serial.println("[Update] Link created: " + binlink);
+      return "UPDATE_AVAILABLE";
+    }
+    else if (beta == true)
+    {
+      Serial.println("[Update] Beta selected");
+      initlink = dllink + "beta/init";
+    }
+
+    Serial.println("[Update] Link created: " + initlink);
+    http.begin(updatewificlient, initlink);
+    Serial.println("[Update] Connecting to Update Server...");
+    serverstatus = http.GET();
+    if (serverstatus == 200)
+    {
+      strinit = http.getString();
+      http.end();
+      String name = split(strinit, '!', 0);
+      String filename = split(strinit, '!', 1);
+      String newversion = split(strinit, '!', 2);
+      Serial.println("[Update] Successfully connected to the update server!\r");
+      Serial.println("[Update] ***READING UPDATE INFOS***");
+      Serial.println("[Update] Name of the device: " + name);
+      Serial.println("[Update] Update Version: " + newversion);
+      Serial.println("[Update] ***READING SYSTEM SETTINGS***");
+      Serial.println("[Update] Device Name: " + DEVICENAME);
+      Serial.println("[Update] Installed Version: " + VERSION);
+      Serial.println("[Update] Beta enabled: " + String(beta));
+      Serial.println("[Update] Dev enabled: " + String(dev));
+      if (dev == true)
+      {
+        Serial.println("[Update] DevTag: " + DEVTAG);
+      }
+      if (VERSION == newversion)
+      {
+        Serial.println("[Update] No Update available!\r");
+        return "NO_UPDATE_AVAILABLE";
+      }
+      else
+      {
+        Serial.println("[Update] Update available!");
+        Serial.println("[Update] Creating DLLink: ");
+        if (beta == true)
+        {
+          binlink = dllink + "beta/" + filename + newversion + ".bin";
+        }
+        else
+        {
+          binlink = dllink + filename + newversion + ".bin";
+        }
+        Serial.println("[Update] " + binlink);
+        return "UPDATE_AVAILABLE";
+      }
+    }
+    else
+    {
+      http.end();
+      Serial.println("[Update] ERROR: UPDATE SERVER DOWN!");
+      return "UPDATE_SERVER_DOWN";
+    }
   }
 }
 
 String UpdateLoop()
 {
-
-  ESPhttpUpdate.onStart(update_started);
-  ESPhttpUpdate.onEnd(update_finished);
-  ESPhttpUpdate.onProgress(update_progress);
-  ESPhttpUpdate.onError(update_error);
-  t_httpUpdate_return ret = ESPhttpUpdate.update(updatewificlient, binlink);
-  switch (ret)
+  if (varCheck() == false)
   {
-  case HTTP_UPDATE_FAILED:
-    Serial.printf("HTTP_UPDATE_FAILD Error (%d): %s\r", ESPhttpUpdate.getLastError(), ESPhttpUpdate.getLastErrorString().c_str());
-    return "HTTP_ERROR";
-    break;
-
-  case HTTP_UPDATE_NO_UPDATES:
-    return "HTTP_UPDATE_NO_UPDATES";
-    break;
-
-  case HTTP_UPDATE_OK:
-    return "HTTP_UPDATE_OK";
-    break;
+    return "NO_VARIABLES_SET";
   }
-  return "null";
+  else
+  {
+    ESPhttpUpdate.onStart(update_started);
+    ESPhttpUpdate.onEnd(update_finished);
+    ESPhttpUpdate.onProgress(update_progress);
+    ESPhttpUpdate.onError(update_error);
+    t_httpUpdate_return ret = ESPhttpUpdate.update(updatewificlient, binlink);
+    switch (ret)
+    {
+    case HTTP_UPDATE_FAILED:
+      Serial.printf("HTTP_UPDATE_FAILD Error (%d): %s\r", ESPhttpUpdate.getLastError(), ESPhttpUpdate.getLastErrorString().c_str());
+      return "HTTP_ERROR";
+      break;
+
+    case HTTP_UPDATE_NO_UPDATES:
+      return "HTTP_UPDATE_NO_UPDATES";
+      break;
+
+    case HTTP_UPDATE_OK:
+      return "HTTP_UPDATE_OK";
+      break;
+    }
+    return "null";
+  }
 }
 
-void dataTransmission()
+String dataTransmission()
 {
   String postData = dllink + "datareceive.php?mac=" + WiFi.macAddress() + "&devicename=" + DEVICENAME + "&fwver=" + VERSION;
-  // Serial.println(postData);
   http.begin(updatewificlient, postData);
   int httpCode = http.GET();
-  Serial.println(httpCode);
-  String payload = http.getString(); // Get the response payload
-  //Serial.println(payload);
-  http.end(); // Close connection
+  if (httpCode == 200) {
+  Serial.println("[Update] UserData successfully transmitted!");
+  return "SUCCESS";
+  }
+  else {
+    Serial.println("[Update] Error transmitting UserData!");
+    return "ERROR";
+  }
+  
 }
 
 void connectWIFI(String ssid, String passwd)
@@ -287,6 +323,7 @@ String loadWIFI(String mode)
     return "";
   }
 }
+
 
 void connectWIFIUser(String ssid, String password)
 {
@@ -406,4 +443,100 @@ void connectWIFIUserHandle()
 void endWIFIUser()
 {
   server.stop();
+}
+
+void setDeviceName(String DevName)
+{
+  DEVICENAME = DevName;
+}
+
+String getDeviceName()
+{
+  return DEVICENAME;
+}
+
+void setVersion(String ver)
+{
+  VERSION = ver;
+}
+
+String getVersion()
+{
+  return VERSION;
+}
+
+void setDlLink(String DLL)
+{
+  dllink = DLL;
+}
+
+String getDlLink()
+{
+  return dllink;
+}
+
+void setDevLink(String DEL)
+{
+  devlink = DEL;
+}
+
+String getDevLink()
+{
+  return devlink;
+}
+
+void setDevTag(String DTAG)
+{
+  DEVTAG = DTAG;
+}
+
+String getDevTag()
+{
+  return DEVTAG;
+}
+
+void setBetaState(bool sbeta)
+{
+  beta = sbeta;
+}
+
+bool getBetaState()
+{
+  return beta;
+}
+
+void setDevState(bool sdev)
+{
+  dev = sdev;
+}
+
+bool getDevState()
+{
+  return dev;
+}
+
+bool varCheck()
+{
+  if (dev == false)
+  {
+    if (DEVICENAME.length() == 0 or VERSION.length() == 0 or dllink.length() == 0)
+    {
+      return false;
+    }
+    else
+    {
+      return true;
+    }
+  }
+  else
+  {
+    if (DEVICENAME.length() == 0 or VERSION.length() == 0 or dllink.length() == 0 or devlink.length() == 0 or DEVTAG.length() == 0)
+    {
+      return false;
+    }
+    else
+    {
+      return true;
+    }
+  }
 }
