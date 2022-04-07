@@ -19,7 +19,7 @@ TO DO:
 #include <ESP8266mDNS.h>
 #include "R-Lib8266.h"
 
-const String LIBVERSION = "v1.0.0a";
+const String LIBVERSION = "v1.0.2";
 
 String strinit, initlink, binlink, SSID, PASSWORD, content, st, DEVICENAME, VERSION, dllink, devlink, DEVTAG;
 int serverstatus, statusCode;
