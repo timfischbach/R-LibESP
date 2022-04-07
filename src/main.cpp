@@ -9,6 +9,7 @@ void setup()
    setVersion("1.0.0a");
    setDlLink("http://dl.timfischbach.com/firmware/testdevice/");
    setDevLink("http://dl.timfischbach.com/dev/");
+   setBetaState(true);
    //R_LIB SETUP END
    delay(3000);
    Serial.begin(115200);

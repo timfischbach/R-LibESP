@@ -33,7 +33,7 @@ HTTPClient http;
 String CheckUpdate();
 String split(String s, char parser, int index);
 String UpdateLoop();
-void dataTransmission();
+String dataTransmission();
 void connectWIFI(String ssid, String passwd);
 bool checkWIFI();
 void resetWIFI();
@@ -177,7 +177,7 @@ String CheckUpdate()
         {
           binlink = dllink + filename + newversion + ".bin";
         }
-        Serial.println("[UPDATE] " + binlink);
+        Serial.println("[Update] " + binlink);
         return "UPDATE_AVAILABLE";
       }
     }
@@ -222,16 +222,20 @@ String UpdateLoop()
   }
 }
 
-void dataTransmission()
+String dataTransmission()
 {
   String postData = dllink + "datareceive.php?mac=" + WiFi.macAddress() + "&devicename=" + DEVICENAME + "&fwver=" + VERSION;
-  // Serial.println(postData);
   http.begin(updatewificlient, postData);
   int httpCode = http.GET();
-  Serial.println(httpCode);
-  String payload = http.getString(); // Get the response payload
-  // Serial.println(payload);
-  http.end(); // Close connection
+  if (httpCode == 200) {
+  Serial.println("[Update] UserData successfully transmitted!");
+  return "SUCCESS";
+  }
+  else {
+    Serial.println("[Update] Error transmitting UserData!");
+    return "ERROR";
+  }
+  
 }
 
 void connectWIFI(String ssid, String passwd)

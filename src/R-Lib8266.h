@@ -10,7 +10,7 @@ extern int progress;
 String CheckUpdate();
 String split(String s, char parser, int index);
 String UpdateLoop();
-void dataTransmission();
+String dataTransmission();
 void connectWIFI(String ssid, String passwd);
 bool checkWIFI();
 void resetWIFI();
