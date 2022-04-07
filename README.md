@@ -1,5 +1,5 @@
 # R-Lib8266
-A library for easy HTTP OTA updates with 3 sources (stable, beta, dev) and WIFI connection by Tim Fischbach.
+A library for easy HTTP OTA updates with 3 sources (stable, beta, dev) and WIFI connection, used on ESP8266 by Tim Fischbach.
 
 WIKI IS IN PROGRESS...
 
