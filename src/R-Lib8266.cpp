@@ -13,13 +13,12 @@ TO DO:
 #include <ESP8266WiFi.h>
 #include <ESP8266HTTPClient.h>
 #include <ESP8266httpUpdate.h>
-#include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
 #include <EEPROM.h>
 #include <ESP8266mDNS.h>
 #include "R-Lib8266.h"
 
-const String LIBVERSION = "v1.0.0a";
+const String LIBVERSION = "v1.0.2";
 
 String strinit, initlink, binlink, SSID, PASSWORD, content, st, DEVICENAME, VERSION, dllink, devlink, DEVTAG;
 int serverstatus, statusCode;
@@ -30,9 +29,9 @@ ESP8266WebServer server(80);
 WiFiClient updatewificlient;
 HTTPClient http;
 
-String CheckUpdate();
+String checkUpdate();
 String split(String s, char parser, int index);
-String UpdateLoop();
+String performUpdate();
 String dataTransmission();
 void connectWIFI(String ssid, String passwd);
 bool checkWIFI();
@@ -107,7 +106,7 @@ String split(String s, char parser, int index)
   return rs;
 }
 
-String CheckUpdate()
+String checkUpdate()
 {
   if (varCheck() == false)
   {
@@ -190,7 +189,7 @@ String CheckUpdate()
   }
 }
 
-String UpdateLoop()
+String performUpdate()
 {
   if (varCheck() == false)
   {

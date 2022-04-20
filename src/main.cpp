@@ -33,10 +33,10 @@ void setup()
    }
    dataTransmission();
    delay(1000);
-   if (CheckUpdate() == "UPDATE_AVAILABLE")
+   if (checkUpdate() == "UPDATE_AVAILABLE")
    {
       while (true) {
-         UpdateLoop();
+         performUpdate();
       }
    }
 }
