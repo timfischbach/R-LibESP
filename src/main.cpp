@@ -8,7 +8,6 @@ void setup()
    setDeviceName("TestDevice");
    setVersion("1.0.0a");
    setDlLink("http://dl.timfischbach.com/firmware/testdevice/");
-   setDevLink("http://dl.timfischbach.com/dev/");
    setBetaState(true);
    //R_LIB SETUP END
    delay(3000);
@@ -35,9 +34,7 @@ void setup()
    delay(1000);
    if (checkUpdate() == "UPDATE_AVAILABLE")
    {
-      while (true) {
          performUpdate();
-      }
    }
 }
 

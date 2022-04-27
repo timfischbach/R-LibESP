@@ -5,6 +5,7 @@ Functions:
 - Sys intern Wifi config
 - Update Functions over 3 ways! (Stable, Beta or Dev)
 - Data Transmission to Update-server for stats.
+- Detecting possible unwanted Update loops
 
 TO DO:
 - Redirection (Log In WIFI)
@@ -18,10 +19,12 @@ TO DO:
 #include <ESP8266mDNS.h>
 #include "R-Lib8266.h"
 
-const String LIBVERSION = "v1.0.2";
+const String LIBVERSION = "v1.0.3";
 
-String strinit, initlink, binlink, SSID, PASSWORD, content, st, DEVICENAME, VERSION, dllink, devlink, DEVTAG;
+String strinit, initlink, binlink, SSID, PASSWORD, content, st, DEVICENAME, VERSION, dllink;
+String status = "OK";
 int serverstatus, statusCode;
+unsigned long prohibitupdatemillis = 0;
 bool beta = false;
 bool dev = false;
 
@@ -52,10 +55,6 @@ void setVersion(String ver);
 String getVersion();
 void setDlLink(String DLL);
 String getDlLink();
-void setDevLink(String DEL);
-String getDevLink();
-void setDevTag(String DTAG);
-String getDevTag();
 void setBetaState(bool sbeta);
 bool getBetaState();
 void setDevState(bool sdev);
@@ -124,8 +123,8 @@ String checkUpdate()
     else if (dev == true)
     {
       Serial.println("[Update] Developer mode selected");
-      Serial.println("[Update] Downloading from Devtag!");
-      binlink = devlink + DEVTAG + "/firmware.bin";
+      Serial.println("[Update] Creating Link...");
+      binlink = dllink + "/dev/firmware.bin";
       Serial.println("[Update] Link created: " + binlink);
       return "UPDATE_AVAILABLE";
     }
@@ -154,11 +153,6 @@ String checkUpdate()
       Serial.println("[Update] Device Name: " + DEVICENAME);
       Serial.println("[Update] Installed Version: " + VERSION);
       Serial.println("[Update] Beta enabled: " + String(beta));
-      Serial.println("[Update] Dev enabled: " + String(dev));
-      if (dev == true)
-      {
-        Serial.println("[Update] DevTag: " + DEVTAG);
-      }
       if (VERSION == newversion)
       {
         Serial.println("[Update] No Update available!\r");
@@ -195,17 +189,57 @@ String performUpdate()
   {
     return "NO_VARIABLES_SET";
   }
+  if (prohibitupdatemillis + 86400000 > millis())
+  {
+    int timeleft = prohibitupdatemillis + 86400000 - millis();
+    Serial.print("[Update] ERROR: UPDATE BLOCKED BY UPDATE LOOP PROTECTION");
+    Serial.print("[Update] Time till updating is possible: " + timeleft);
+    return "UPDATE_LOOP_BLOCK";
+  }
+  Serial.print("[Update] Checking old version number...");
+  EEPROM.begin(512);
+  String oldver;
+  String ver = getVersion();
+  for (int i = 96; i < i + ver.length(); ++i)
+  {
+    oldver += char(EEPROM.read(i));
+  }
+  if (oldver == ver)
+  {
+    int stat = EEPROM.read(511);
+    stat++;
+    if (stat == 1)
+    {
+      Serial.print("[Update] Downgrade or possible Update loop stage 1 detected. Continuing with update...");
+      EEPROM.write(511, stat);
+    }
+    else
+    {
+      Serial.print("[Update] ERROR: UPDATE LOOP DETECTED!!!");
+      Serial.print("[Update] Disabling updates for the next 24 hours!");
+      status = "ERROR: UPDATE LOOP DETECTED! PLEASE MATCH THE VERSION IN THE SOURCECODE WITH THE FILENAME VERSION AND PUSH AN UPDATE!";
+      prohibitupdatemillis = millis();
+      return "UPDATE_LOOP_DETECTED";
+    }
+  }
   else
+  {
+    Serial.print("[Update] Done! No Downgrade or Update Loop detected!");
+    Serial.print("[Update] Continuing with update...");
+  }
+
+  t_httpUpdate_return ret;
+  while (true)
   {
     ESPhttpUpdate.onStart(update_started);
     ESPhttpUpdate.onEnd(update_finished);
     ESPhttpUpdate.onProgress(update_progress);
     ESPhttpUpdate.onError(update_error);
-    t_httpUpdate_return ret = ESPhttpUpdate.update(updatewificlient, binlink);
+    ret = ESPhttpUpdate.update(updatewificlient, binlink);
     switch (ret)
     {
     case HTTP_UPDATE_FAILED:
-      Serial.printf("HTTP_UPDATE_FAILD Error (%d): %s\r", ESPhttpUpdate.getLastError(), ESPhttpUpdate.getLastErrorString().c_str());
+      Serial.printf("[UPDATE] HTTP_UPDATE_FAILD Error (%d): %s\r", ESPhttpUpdate.getLastError(), ESPhttpUpdate.getLastErrorString().c_str());
       return "HTTP_ERROR";
       break;
 
@@ -214,6 +248,17 @@ String performUpdate()
       break;
 
     case HTTP_UPDATE_OK:
+      EEPROM.begin(512);
+      Serial.println("[UPDATE] Update OK!");
+      Serial.println("[UPDATE] Saving old version to prevent Update loop...");
+      String ver = getVersion();
+      for (int i = 96; i < ver.length(); ++i)
+      {
+        EEPROM.write(i, ver[i]);
+        Serial.print(ver[i]);
+      }
+      EEPROM.write(511, 0);
+      Serial.println("[WIFI] Done writing old version to EEPROM.");
       return "HTTP_UPDATE_OK";
       break;
     }
@@ -221,20 +266,22 @@ String performUpdate()
   }
 }
 
+
 String dataTransmission()
 {
-  String postData = dllink + "datareceive.php?mac=" + WiFi.macAddress() + "&devicename=" + DEVICENAME + "&fwver=" + VERSION;
+  String postData = dllink + "datareceive.php?mac=" + WiFi.macAddress() + "&devicename=" + DEVICENAME + "&fwver=" + VERSION + "&status=" + status;
   http.begin(updatewificlient, postData);
   int httpCode = http.GET();
-  if (httpCode == 200) {
-  Serial.println("[Update] UserData successfully transmitted!");
-  return "SUCCESS";
+  if (httpCode == 200)
+  {
+    Serial.println("[Update] UserData successfully transmitted!");
+    return "SUCCESS";
   }
-  else {
+  else
+  {
     Serial.println("[Update] Error transmitting UserData!");
     return "ERROR";
   }
-  
 }
 
 void connectWIFI(String ssid, String passwd)
@@ -322,7 +369,6 @@ String loadWIFI(String mode)
     return "";
   }
 }
-
 
 void connectWIFIUser(String ssid, String password)
 {
@@ -474,26 +520,6 @@ String getDlLink()
   return dllink;
 }
 
-void setDevLink(String DEL)
-{
-  devlink = DEL;
-}
-
-String getDevLink()
-{
-  return devlink;
-}
-
-void setDevTag(String DTAG)
-{
-  DEVTAG = DTAG;
-}
-
-String getDevTag()
-{
-  return DEVTAG;
-}
-
 void setBetaState(bool sbeta)
 {
   beta = sbeta;
@@ -529,7 +555,7 @@ bool varCheck()
   }
   else
   {
-    if (DEVICENAME.length() == 0 or VERSION.length() == 0 or dllink.length() == 0 or devlink.length() == 0 or DEVTAG.length() == 0)
+    if (DEVICENAME.length() == 0 or VERSION.length() == 0 or dllink.length() == 0)
     {
       return false;
     }
