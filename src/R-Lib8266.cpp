@@ -27,6 +27,7 @@ int serverstatus, statusCode;
 unsigned long prohibitupdatemillis = 0;
 bool beta = false;
 bool dev = false;
+bool updatelock = false;
 
 ESP8266WebServer server(80);
 WiFiClient updatewificlient;
@@ -60,6 +61,8 @@ bool getBetaState();
 void setDevState(bool sdev);
 bool getDevState();
 bool varCheck();
+void saveOV(String oldversion);
+String loadOV();
 
 void update_started()
 {
@@ -70,6 +73,13 @@ void update_finished()
 {
   Serial.print("\n");
   Serial.println("[Update] HTTP update process finished");
+  EEPROM.begin(4096);
+  Serial.println("[Update] Update OK!");
+  Serial.println("[Update] Saving old version to prevent Update loop...");
+  Serial.println(getVersion());
+  String ver = getVersion();
+  saveOV(ver);
+  Serial.println("[Update] Done writing old version to EEPROM.");
 }
 
 void update_progress(int cur, int total)
@@ -138,6 +148,7 @@ String checkUpdate()
     http.begin(updatewificlient, initlink);
     Serial.println("[Update] Connecting to Update Server...");
     serverstatus = http.GET();
+    delay(100);
     if (serverstatus == 200)
     {
       strinit = http.getString();
@@ -189,43 +200,50 @@ String performUpdate()
   {
     return "NO_VARIABLES_SET";
   }
-  if (prohibitupdatemillis + 86400000 > millis())
+  if (updatelock == true and prohibitupdatemillis + 86400000 > millis())
   {
     int timeleft = prohibitupdatemillis + 86400000 - millis();
-    Serial.print("[Update] ERROR: UPDATE BLOCKED BY UPDATE LOOP PROTECTION");
-    Serial.print("[Update] Time till updating is possible: " + timeleft);
+    Serial.println("[Update] ERROR: UPDATE BLOCKED BY UPDATE LOOP PROTECTION");
+    Serial.println("[ULProtection] Time till updating is possible: " + timeleft);
     return "UPDATE_LOOP_BLOCK";
   }
-  Serial.print("[Update] Checking old version number...");
-  EEPROM.begin(512);
+  Serial.println("[ULProtection] Checking old version number...");
+  EEPROM.begin(4096);
   String oldver;
   String ver = getVersion();
-  for (int i = 96; i < i + ver.length(); ++i)
-  {
-    oldver += char(EEPROM.read(i));
-  }
+  oldver = loadOV();
+  Serial.println(oldver);
+  Serial.println(ver);
   if (oldver == ver)
   {
-    int stat = EEPROM.read(511);
+    int stat = EEPROM.read(450);
     stat++;
+    Serial.println(stat);
     if (stat == 1)
     {
-      Serial.print("[Update] Downgrade or possible Update loop stage 1 detected. Continuing with update...");
-      EEPROM.write(511, stat);
+      Serial.println("[ULProtection] Downgrade or possible Update loop stage 1 detected. Continuing with update...");
+      EEPROM.begin(4096);
+      EEPROM.write(450, stat);
+      EEPROM.commit();
+      EEPROM.end();
     }
     else
     {
-      Serial.print("[Update] ERROR: UPDATE LOOP DETECTED!!!");
-      Serial.print("[Update] Disabling updates for the next 24 hours!");
+      Serial.println("[ULProtection] ERROR: UPDATE LOOP DETECTED!!!");
+      Serial.println("[ULProtection] Disabling updates for the next 24 hours!");
       status = "ERROR: UPDATE LOOP DETECTED! PLEASE MATCH THE VERSION IN THE SOURCECODE WITH THE FILENAME VERSION AND PUSH AN UPDATE!";
+      updatelock = true;
       prohibitupdatemillis = millis();
       return "UPDATE_LOOP_DETECTED";
     }
   }
   else
   {
-    Serial.print("[Update] Done! No Downgrade or Update Loop detected!");
-    Serial.print("[Update] Continuing with update...");
+    Serial.println("[ULProtection] Done! No Downgrade or Update Loop detected!");
+    Serial.println("[ULProtection] Continuing with update...");
+    EEPROM.write(450, 0);
+    EEPROM.commit();
+    EEPROM.end();
   }
 
   t_httpUpdate_return ret;
@@ -248,24 +266,12 @@ String performUpdate()
       break;
 
     case HTTP_UPDATE_OK:
-      EEPROM.begin(512);
-      Serial.println("[UPDATE] Update OK!");
-      Serial.println("[UPDATE] Saving old version to prevent Update loop...");
-      String ver = getVersion();
-      for (int i = 96; i < ver.length(); ++i)
-      {
-        EEPROM.write(i, ver[i]);
-        Serial.print(ver[i]);
-      }
-      EEPROM.write(511, 0);
-      Serial.println("[WIFI] Done writing old version to EEPROM.");
       return "HTTP_UPDATE_OK";
       break;
     }
-    return "null";
+    delay(10); //DDOS Protection maybe slowing update down?
   }
 }
-
 
 String dataTransmission()
 {
@@ -309,18 +315,19 @@ void resetWIFI()
   WiFi.disconnect();
   SSID = "";
   PASSWORD = "";
-  EEPROM.begin(512);
+  EEPROM.begin(4096);
   for (int i = 0; i < 96; ++i)
   {
     EEPROM.write(i, 0);
   }
   EEPROM.commit();
+  EEPROM.end();
   Serial.println("[WIFI] Successfully reset WiFi!");
 }
 
 void saveWIFI(String ssid, String password)
 {
-  EEPROM.begin(512);
+  EEPROM.begin(4096);
   Serial.println("[WIFI] Writing SSID to EEPROM:");
   for (int i = 0; i < ssid.length(); ++i)
   {
@@ -335,11 +342,12 @@ void saveWIFI(String ssid, String password)
     Serial.print(password[i]);
   }
   EEPROM.commit();
+  EEPROM.end();
   Serial.println("[WIFI] Done writing SSID to EEPROM.");
 }
 String loadWIFI(String mode)
 {
-  EEPROM.begin(512);
+  EEPROM.begin(4096);
   if (mode == "ssid" or mode == "SSID")
   {
     String esid;
@@ -348,6 +356,7 @@ String loadWIFI(String mode)
       esid += char(EEPROM.read(i));
     }
     SSID = esid.c_str();
+    EEPROM.end();
     Serial.print("[WIFI] Loaded SSID from EEPROM: ");
     Serial.println(SSID);
     return SSID;
@@ -360,6 +369,7 @@ String loadWIFI(String mode)
       epass += char(EEPROM.read(i));
     }
     PASSWORD = epass.c_str();
+    EEPROM.end();
     Serial.print("[WIFI] Loaded Password from EEPROM: ");
     Serial.println(PASSWORD);
     return PASSWORD;
@@ -453,11 +463,13 @@ void createWebServer()
                 if (qsid.length() > 0 && qpass.length() > 0)
                 {
                   Serial.println("[WIFI] Clearing EEPROM");
+                  EEPROM.begin(4096);
                   for (int i = 0; i < 96; ++i)
                   {
                     EEPROM.write(i, 0);
                   }
                   EEPROM.commit();
+                  EEPROM.end();
                   saveWIFI(qsid, qpass);
 
                   content = "{\"Success\":\"saved to eeprom... reset to boot into new wifi\"}";
@@ -564,4 +576,33 @@ bool varCheck()
       return true;
     }
   }
+}
+
+void saveOV(String oldversion)
+{
+  EEPROM.begin(4096);
+  Serial.println("[WIFI] Writing SSID to EEPROM:");
+  for (int i = 0; i < oldversion.length(); i++)
+  {
+    EEPROM.write(i + 96, oldversion[i]);
+  }
+  EEPROM.commit();
+  EEPROM.end();
+  Serial.println("[ULProtection] Saved old version name to EEPROM.");
+}
+String loadOV()
+{
+  EEPROM.begin(4096);
+  String ver = getVersion();
+  String esid;
+  for (int i = 0; i < ver.length(); i++)
+  {
+    char output = EEPROM.read(i + 96);
+    esid += output;
+  }
+  SSID = esid.c_str();
+  EEPROM.end();
+  Serial.print("[ULProtection] Loaded old version name from EEPROM: ");
+  Serial.println(SSID);
+  return SSID;
 }
