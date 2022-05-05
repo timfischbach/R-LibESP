@@ -28,6 +28,7 @@ unsigned long prohibitupdatemillis = 0;
 bool beta = false;
 bool dev = false;
 bool updatelock = false;
+bool lockpassed = false;
 
 ESP8266WebServer server(80);
 WiFiClient updatewificlient;
@@ -158,12 +159,12 @@ String checkUpdate()
       String newversion = split(strinit, '!', 2);
       Serial.println("[Update] Successfully connected to the update server!\r");
       Serial.println("[Update] ***READING UPDATE INFOS***");
-      Serial.println("[Update] Name of the device: " + name);
-      Serial.println("[Update] Update Version: " + newversion);
+      Serial.println("[Update] - Name of the device: " + name);
+      Serial.println("[Update] - Update Version: " + newversion);
       Serial.println("[Update] ***READING SYSTEM SETTINGS***");
-      Serial.println("[Update] Device Name: " + DEVICENAME);
-      Serial.println("[Update] Installed Version: " + VERSION);
-      Serial.println("[Update] Beta enabled: " + String(beta));
+      Serial.println("[Update] - Device Name: " + DEVICENAME);
+      Serial.println("[Update] - Installed Version: " + VERSION);
+      Serial.println("[Update] - Beta enabled: " + String(beta));
       if (VERSION == newversion)
       {
         Serial.println("[Update] No Update available!\r");
@@ -172,7 +173,7 @@ String checkUpdate()
       else
       {
         Serial.println("[Update] Update available!");
-        Serial.println("[Update] Creating DLLink: ");
+        Serial.println("[Update] - Creating DLLink: ");
         if (beta == true)
         {
           binlink = dllink + "beta/" + filename + newversion + ".bin";
@@ -202,28 +203,31 @@ String performUpdate()
   }
   if (updatelock == true and prohibitupdatemillis + 86400000 > millis())
   {
-    int timeleft = prohibitupdatemillis + 86400000 - millis();
+    long timeleft = prohibitupdatemillis + 86400000 - millis();
+    timeleft = timeleft / 1000;
     Serial.println("[Update] ERROR: UPDATE BLOCKED BY UPDATE LOOP PROTECTION");
     Serial.println("[ULProtection] Time till updating is possible: " + timeleft);
     return "UPDATE_LOOP_BLOCK";
   }
+  else if (updatelock == true and prohibitupdatemillis + 86400000 < millis()) {
+    Serial.println("[ULProtection] 24 hours passed. Trying to update again!");
+    lockpassed = true;
+  }
   Serial.println("[ULProtection] Checking old version number...");
-  EEPROM.begin(4096);
   String oldver;
   String ver = getVersion();
   oldver = loadOV();
-  Serial.println(oldver);
-  Serial.println(ver);
   if (oldver == ver)
   {
-    int stat = EEPROM.read(450);
+    EEPROM.begin(4096);
+    int stat = EEPROM.read(250);
+    EEPROM.end();
     stat++;
-    Serial.println(stat);
-    if (stat == 1)
+    if (stat == 1 or lockpassed == true)
     {
       Serial.println("[ULProtection] Downgrade or possible Update loop stage 1 detected. Continuing with update...");
       EEPROM.begin(4096);
-      EEPROM.write(450, stat);
+      EEPROM.write(250, stat);
       EEPROM.commit();
       EEPROM.end();
     }
@@ -231,8 +235,9 @@ String performUpdate()
     {
       Serial.println("[ULProtection] ERROR: UPDATE LOOP DETECTED!!!");
       Serial.println("[ULProtection] Disabling updates for the next 24 hours!");
-      status = "ERROR: UPDATE LOOP DETECTED! PLEASE MATCH THE VERSION IN THE SOURCECODE WITH THE FILENAME VERSION AND PUSH AN UPDATE!";
+      status = "ERROR:%20UPDATE%20LOOP%20DETECTED!%20PLEASE%20MATCH%20THE%20VERSION%20IN%20THE%20SOURCECODE%20WITH%20THE%20FILENAME%20VERSION%20AND%20PUSH%20AN%20UPDATE!";
       updatelock = true;
+      lockpassed = false;
       prohibitupdatemillis = millis();
       return "UPDATE_LOOP_DETECTED";
     }
@@ -241,7 +246,8 @@ String performUpdate()
   {
     Serial.println("[ULProtection] Done! No Downgrade or Update Loop detected!");
     Serial.println("[ULProtection] Continuing with update...");
-    EEPROM.write(450, 0);
+    EEPROM.begin(4096);
+    EEPROM.write(250, 0);
     EEPROM.commit();
     EEPROM.end();
   }
@@ -277,6 +283,7 @@ String dataTransmission()
 {
   String postData = dllink + "datareceive.php?mac=" + WiFi.macAddress() + "&devicename=" + DEVICENAME + "&fwver=" + VERSION + "&status=" + status;
   http.begin(updatewificlient, postData);
+  delay(10);
   int httpCode = http.GET();
   if (httpCode == 200)
   {
@@ -581,18 +588,19 @@ bool varCheck()
 void saveOV(String oldversion)
 {
   EEPROM.begin(4096);
-  Serial.println("[WIFI] Writing SSID to EEPROM:");
+  Serial.println("[ULProtection] Saving old version number to EEPROM...");
   for (int i = 0; i < oldversion.length(); i++)
   {
     EEPROM.write(i + 96, oldversion[i]);
   }
   EEPROM.commit();
   EEPROM.end();
-  Serial.println("[ULProtection] Saved old version name to EEPROM.");
+  Serial.println("[ULProtection] Saved old version number to EEPROM.");
 }
 String loadOV()
 {
   EEPROM.begin(4096);
+    Serial.println("[ULProtection] Loading old version number from EEPROM...");
   String ver = getVersion();
   String esid;
   for (int i = 0; i < ver.length(); i++)
@@ -602,7 +610,7 @@ String loadOV()
   }
   SSID = esid.c_str();
   EEPROM.end();
-  Serial.print("[ULProtection] Loaded old version name from EEPROM: ");
+  Serial.print("[ULProtection] Loaded old version number from EEPROM: ");
   Serial.println(SSID);
   return SSID;
 }
