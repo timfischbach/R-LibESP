@@ -5,6 +5,7 @@ Functions:
 - Sys intern Wifi config
 - Update Functions over 3 ways! (Stable, Beta or Dev)
 - Data Transmission to Update-server for stats.
+- Detecting possible unwanted Update loops
 
 TO DO:
 - Redirection (Log In WIFI)
@@ -13,26 +14,29 @@ TO DO:
 #include <ESP8266WiFi.h>
 #include <ESP8266HTTPClient.h>
 #include <ESP8266httpUpdate.h>
-#include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
 #include <EEPROM.h>
 #include <ESP8266mDNS.h>
 #include "R-Lib8266.h"
 
-const String LIBVERSION = "v1.0.2";
+const String LIBVERSION = "v1.0.3";
 
-String strinit, initlink, binlink, SSID, PASSWORD, content, st, DEVICENAME, VERSION, dllink, devlink, DEVTAG;
+String strinit, initlink, binlink, SSID, PASSWORD, content, st, DEVICENAME, VERSION, dllink;
+String status = "OK";
 int serverstatus, statusCode;
+unsigned long prohibitupdatemillis = 0;
 bool beta = false;
 bool dev = false;
+bool updatelock = false;
+bool lockpassed = false;
 
 ESP8266WebServer server(80);
 WiFiClient updatewificlient;
 HTTPClient http;
 
-String CheckUpdate();
+String checkUpdate();
 String split(String s, char parser, int index);
-String UpdateLoop();
+String performUpdate();
 String dataTransmission();
 void connectWIFI(String ssid, String passwd);
 bool checkWIFI();
@@ -53,15 +57,13 @@ void setVersion(String ver);
 String getVersion();
 void setDlLink(String DLL);
 String getDlLink();
-void setDevLink(String DEL);
-String getDevLink();
-void setDevTag(String DTAG);
-String getDevTag();
 void setBetaState(bool sbeta);
 bool getBetaState();
 void setDevState(bool sdev);
 bool getDevState();
 bool varCheck();
+void saveOV(String oldversion);
+String loadOV();
 
 void update_started()
 {
@@ -72,6 +74,13 @@ void update_finished()
 {
   Serial.print("\n");
   Serial.println("[Update] HTTP update process finished");
+  EEPROM.begin(4096);
+  Serial.println("[Update] Update OK!");
+  Serial.println("[Update] Saving old version to prevent Update loop...");
+  Serial.println(getVersion());
+  String ver = getVersion();
+  saveOV(ver);
+  Serial.println("[Update] Done writing old version to EEPROM.");
 }
 
 void update_progress(int cur, int total)
@@ -107,7 +116,7 @@ String split(String s, char parser, int index)
   return rs;
 }
 
-String CheckUpdate()
+String checkUpdate()
 {
   if (varCheck() == false)
   {
@@ -125,8 +134,8 @@ String CheckUpdate()
     else if (dev == true)
     {
       Serial.println("[Update] Developer mode selected");
-      Serial.println("[Update] Downloading from Devtag!");
-      binlink = devlink + DEVTAG + "/firmware.bin";
+      Serial.println("[Update] Creating Link...");
+      binlink = dllink + "/dev/firmware.bin";
       Serial.println("[Update] Link created: " + binlink);
       return "UPDATE_AVAILABLE";
     }
@@ -140,6 +149,7 @@ String CheckUpdate()
     http.begin(updatewificlient, initlink);
     Serial.println("[Update] Connecting to Update Server...");
     serverstatus = http.GET();
+    delay(100);
     if (serverstatus == 200)
     {
       strinit = http.getString();
@@ -149,17 +159,12 @@ String CheckUpdate()
       String newversion = split(strinit, '!', 2);
       Serial.println("[Update] Successfully connected to the update server!\r");
       Serial.println("[Update] ***READING UPDATE INFOS***");
-      Serial.println("[Update] Name of the device: " + name);
-      Serial.println("[Update] Update Version: " + newversion);
+      Serial.println("[Update] - Name of the device: " + name);
+      Serial.println("[Update] - Update Version: " + newversion);
       Serial.println("[Update] ***READING SYSTEM SETTINGS***");
-      Serial.println("[Update] Device Name: " + DEVICENAME);
-      Serial.println("[Update] Installed Version: " + VERSION);
-      Serial.println("[Update] Beta enabled: " + String(beta));
-      Serial.println("[Update] Dev enabled: " + String(dev));
-      if (dev == true)
-      {
-        Serial.println("[Update] DevTag: " + DEVTAG);
-      }
+      Serial.println("[Update] - Device Name: " + DEVICENAME);
+      Serial.println("[Update] - Installed Version: " + VERSION);
+      Serial.println("[Update] - Beta enabled: " + String(beta));
       if (VERSION == newversion)
       {
         Serial.println("[Update] No Update available!\r");
@@ -168,7 +173,7 @@ String CheckUpdate()
       else
       {
         Serial.println("[Update] Update available!");
-        Serial.println("[Update] Creating DLLink: ");
+        Serial.println("[Update] - Creating DLLink: ");
         if (beta == true)
         {
           binlink = dllink + "beta/" + filename + newversion + ".bin";
@@ -190,23 +195,75 @@ String CheckUpdate()
   }
 }
 
-String UpdateLoop()
+String performUpdate()
 {
   if (varCheck() == false)
   {
     return "NO_VARIABLES_SET";
   }
+  if (updatelock == true and prohibitupdatemillis + 86400000 > millis())
+  {
+    long timeleft = prohibitupdatemillis + 86400000 - millis();
+    timeleft = timeleft / 1000;
+    Serial.println("[Update] ERROR: UPDATE BLOCKED BY UPDATE LOOP PROTECTION");
+    Serial.println("[ULProtection] Time till updating is possible: " + timeleft);
+    return "UPDATE_LOOP_BLOCK";
+  }
+  else if (updatelock == true and prohibitupdatemillis + 86400000 < millis()) {
+    Serial.println("[ULProtection] 24 hours passed. Trying to update again!");
+    lockpassed = true;
+  }
+  Serial.println("[ULProtection] Checking old version number...");
+  String oldver;
+  String ver = getVersion();
+  oldver = loadOV();
+  if (oldver == ver)
+  {
+    EEPROM.begin(4096);
+    int stat = EEPROM.read(250);
+    EEPROM.end();
+    stat++;
+    if (stat == 1 or lockpassed == true)
+    {
+      Serial.println("[ULProtection] Downgrade or possible Update loop stage 1 detected. Continuing with update...");
+      EEPROM.begin(4096);
+      EEPROM.write(250, stat);
+      EEPROM.commit();
+      EEPROM.end();
+    }
+    else
+    {
+      Serial.println("[ULProtection] ERROR: UPDATE LOOP DETECTED!!!");
+      Serial.println("[ULProtection] Disabling updates for the next 24 hours!");
+      status = "ERROR:%20UPDATE%20LOOP%20DETECTED!%20PLEASE%20MATCH%20THE%20VERSION%20IN%20THE%20SOURCECODE%20WITH%20THE%20FILENAME%20VERSION%20AND%20PUSH%20AN%20UPDATE!";
+      updatelock = true;
+      lockpassed = false;
+      prohibitupdatemillis = millis();
+      return "UPDATE_LOOP_DETECTED";
+    }
+  }
   else
+  {
+    Serial.println("[ULProtection] Done! No Downgrade or Update Loop detected!");
+    Serial.println("[ULProtection] Continuing with update...");
+    EEPROM.begin(4096);
+    EEPROM.write(250, 0);
+    EEPROM.commit();
+    EEPROM.end();
+  }
+
+  t_httpUpdate_return ret;
+  while (true)
   {
     ESPhttpUpdate.onStart(update_started);
     ESPhttpUpdate.onEnd(update_finished);
     ESPhttpUpdate.onProgress(update_progress);
     ESPhttpUpdate.onError(update_error);
-    t_httpUpdate_return ret = ESPhttpUpdate.update(updatewificlient, binlink);
+    ret = ESPhttpUpdate.update(updatewificlient, binlink);
     switch (ret)
     {
     case HTTP_UPDATE_FAILED:
-      Serial.printf("HTTP_UPDATE_FAILD Error (%d): %s\r", ESPhttpUpdate.getLastError(), ESPhttpUpdate.getLastErrorString().c_str());
+      Serial.printf("[UPDATE] HTTP_UPDATE_FAILD Error (%d): %s\r", ESPhttpUpdate.getLastError(), ESPhttpUpdate.getLastErrorString().c_str());
       return "HTTP_ERROR";
       break;
 
@@ -218,24 +275,26 @@ String UpdateLoop()
       return "HTTP_UPDATE_OK";
       break;
     }
-    return "null";
+    delay(10); //DDOS Protection maybe slowing update down?
   }
 }
 
 String dataTransmission()
 {
-  String postData = dllink + "datareceive.php?mac=" + WiFi.macAddress() + "&devicename=" + DEVICENAME + "&fwver=" + VERSION;
+  String postData = dllink + "datareceive.php?mac=" + WiFi.macAddress() + "&devicename=" + DEVICENAME + "&fwver=" + VERSION + "&status=" + status;
   http.begin(updatewificlient, postData);
+  delay(10);
   int httpCode = http.GET();
-  if (httpCode == 200) {
-  Serial.println("[Update] UserData successfully transmitted!");
-  return "SUCCESS";
+  if (httpCode == 200)
+  {
+    Serial.println("[Update] UserData successfully transmitted!");
+    return "SUCCESS";
   }
-  else {
+  else
+  {
     Serial.println("[Update] Error transmitting UserData!");
     return "ERROR";
   }
-  
 }
 
 void connectWIFI(String ssid, String passwd)
@@ -263,18 +322,19 @@ void resetWIFI()
   WiFi.disconnect();
   SSID = "";
   PASSWORD = "";
-  EEPROM.begin(512);
+  EEPROM.begin(4096);
   for (int i = 0; i < 96; ++i)
   {
     EEPROM.write(i, 0);
   }
   EEPROM.commit();
+  EEPROM.end();
   Serial.println("[WIFI] Successfully reset WiFi!");
 }
 
 void saveWIFI(String ssid, String password)
 {
-  EEPROM.begin(512);
+  EEPROM.begin(4096);
   Serial.println("[WIFI] Writing SSID to EEPROM:");
   for (int i = 0; i < ssid.length(); ++i)
   {
@@ -289,11 +349,12 @@ void saveWIFI(String ssid, String password)
     Serial.print(password[i]);
   }
   EEPROM.commit();
+  EEPROM.end();
   Serial.println("[WIFI] Done writing SSID to EEPROM.");
 }
 String loadWIFI(String mode)
 {
-  EEPROM.begin(512);
+  EEPROM.begin(4096);
   if (mode == "ssid" or mode == "SSID")
   {
     String esid;
@@ -302,6 +363,7 @@ String loadWIFI(String mode)
       esid += char(EEPROM.read(i));
     }
     SSID = esid.c_str();
+    EEPROM.end();
     Serial.print("[WIFI] Loaded SSID from EEPROM: ");
     Serial.println(SSID);
     return SSID;
@@ -314,6 +376,7 @@ String loadWIFI(String mode)
       epass += char(EEPROM.read(i));
     }
     PASSWORD = epass.c_str();
+    EEPROM.end();
     Serial.print("[WIFI] Loaded Password from EEPROM: ");
     Serial.println(PASSWORD);
     return PASSWORD;
@@ -323,7 +386,6 @@ String loadWIFI(String mode)
     return "";
   }
 }
-
 
 void connectWIFIUser(String ssid, String password)
 {
@@ -408,11 +470,13 @@ void createWebServer()
                 if (qsid.length() > 0 && qpass.length() > 0)
                 {
                   Serial.println("[WIFI] Clearing EEPROM");
+                  EEPROM.begin(4096);
                   for (int i = 0; i < 96; ++i)
                   {
                     EEPROM.write(i, 0);
                   }
                   EEPROM.commit();
+                  EEPROM.end();
                   saveWIFI(qsid, qpass);
 
                   content = "{\"Success\":\"saved to eeprom... reset to boot into new wifi\"}";
@@ -475,26 +539,6 @@ String getDlLink()
   return dllink;
 }
 
-void setDevLink(String DEL)
-{
-  devlink = DEL;
-}
-
-String getDevLink()
-{
-  return devlink;
-}
-
-void setDevTag(String DTAG)
-{
-  DEVTAG = DTAG;
-}
-
-String getDevTag()
-{
-  return DEVTAG;
-}
-
 void setBetaState(bool sbeta)
 {
   beta = sbeta;
@@ -530,7 +574,7 @@ bool varCheck()
   }
   else
   {
-    if (DEVICENAME.length() == 0 or VERSION.length() == 0 or dllink.length() == 0 or devlink.length() == 0 or DEVTAG.length() == 0)
+    if (DEVICENAME.length() == 0 or VERSION.length() == 0 or dllink.length() == 0)
     {
       return false;
     }
@@ -539,4 +583,34 @@ bool varCheck()
       return true;
     }
   }
+}
+
+void saveOV(String oldversion)
+{
+  EEPROM.begin(4096);
+  Serial.println("[ULProtection] Saving old version number to EEPROM...");
+  for (int i = 0; i < oldversion.length(); i++)
+  {
+    EEPROM.write(i + 96, oldversion[i]);
+  }
+  EEPROM.commit();
+  EEPROM.end();
+  Serial.println("[ULProtection] Saved old version number to EEPROM.");
+}
+String loadOV()
+{
+  EEPROM.begin(4096);
+    Serial.println("[ULProtection] Loading old version number from EEPROM...");
+  String ver = getVersion();
+  String esid;
+  for (int i = 0; i < ver.length(); i++)
+  {
+    char output = EEPROM.read(i + 96);
+    esid += output;
+  }
+  SSID = esid.c_str();
+  EEPROM.end();
+  Serial.print("[ULProtection] Loaded old version number from EEPROM: ");
+  Serial.println(SSID);
+  return SSID;
 }

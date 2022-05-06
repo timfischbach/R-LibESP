@@ -5,7 +5,6 @@
 #include <ESP8266WiFi.h>
 #include <ESP8266HTTPClient.h>
 #include <ESP8266httpUpdate.h>
-#include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
 #include <EEPROM.h>
 #include <ESP8266mDNS.h>
@@ -15,9 +14,9 @@ extern const String LIBVERSION;
 
 extern int progress;
 
-String CheckUpdate();
+String checkUpdate();
 String split(String s, char parser, int index);
-String UpdateLoop();
+String performUpdate();
 String dataTransmission();
 void connectWIFI(String ssid, String passwd);
 bool checkWIFI();
@@ -38,10 +37,6 @@ void setVersion(String ver);
 String getVersion();
 void setDlLink(String DLL);
 String getDlLink();
-void setDevLink(String DEL);
-String getDevLink();
-void setDevTag(String DTAG);
-String getDevTag();
 void setBetaState(bool sbeta);
 bool getBetaState();
 void setDevState(bool sdev);
