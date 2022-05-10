@@ -1,6 +1,6 @@
 <?php
 
-// http://dl.timfischbach.com/datareceive.php?mac=000000000000&devicename=TestProduct&fwver=v1.0&status=OK
+// http://yourServer.com/datareceive.php?mac=000000000000&devicename=TestProduct&fwver=v1.0&status=OK
 
  $var1 = $_GET['mac'];
  $var2 = $_GET['devicename'];
