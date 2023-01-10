@@ -226,7 +226,7 @@ String performUpdate()
     stat++;
     if (stat == 1 or lockpassed == true)
     {
-      Serial.println("[ULProtection] Downgrade or possible Update loop stage 1 detected. Continuing with update...");
+      Serial.println("[ULProtection] Downgrade or possible Update loop detected. Continuing with update...");
       EEPROM.begin(4096);
       EEPROM.write(250, stat);
       EEPROM.commit();
@@ -240,6 +240,11 @@ String performUpdate()
       updatelock = true;
       lockpassed = false;
       prohibitupdatemillis = millis();
+      dataTransmission();
+      EEPROM.begin(4096);
+      EEPROM.write(250, 1);
+      EEPROM.commit();
+      EEPROM.end();
       return "UPDATE_LOOP_DETECTED";
     }
   }
