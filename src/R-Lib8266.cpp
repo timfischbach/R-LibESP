@@ -19,7 +19,7 @@ TO DO:
 #include <ESP8266mDNS.h>
 #include "R-Lib8266.h"
 
-const String LIBVERSION = "v1.0.3";
+const String LIBVERSION = "v1.0.4";
 
 String strinit, initlink, binlink, SSID, PASSWORD, content, st, DEVICENAME, VERSION, dllink;
 String status = "OK";
@@ -94,7 +94,7 @@ void update_error(int err)
   Serial.printf("[Update] HTTP update fatal error code %d\r", err);
 }
 
-String split(String s, char parser, int index)
+String split(String inputString, char splitChar, int index)
 {
   String rs = "";
   int parserIndex = index;
@@ -103,12 +103,12 @@ String split(String s, char parser, int index)
   while (parserIndex >= parserCnt)
   {
     rFromIndex = rToIndex + 1;
-    rToIndex = s.indexOf(parser, rFromIndex);
+    rToIndex = inputString.indexOf(splitChar, rFromIndex);
     if (parserIndex == parserCnt)
     {
       if (rToIndex == 0 || rToIndex == -1)
         return "";
-      return s.substring(rFromIndex, rToIndex);
+      return inputString.substring(rFromIndex, rToIndex);
     }
     else
       parserCnt++;
@@ -209,7 +209,8 @@ String performUpdate()
     Serial.println("[ULProtection] Time till updating is possible: " + timeleft);
     return "UPDATE_LOOP_BLOCK";
   }
-  else if (updatelock == true and prohibitupdatemillis + 86400000 < millis()) {
+  else if (updatelock == true and prohibitupdatemillis + 86400000 < millis())
+  {
     Serial.println("[ULProtection] 24 hours passed. Trying to update again!");
     lockpassed = true;
   }
@@ -275,7 +276,7 @@ String performUpdate()
       return "HTTP_UPDATE_OK";
       break;
     }
-    delay(10); //DDOS Protection maybe slowing update down?
+    delay(10); // DDOS Protection maybe slowing update down?
   }
 }
 
@@ -302,6 +303,8 @@ void connectWIFI(String ssid, String passwd)
   Serial.println("[WIFI] Connecting to WIFI...");
   SSID = ssid;
   PASSWORD = passwd;
+  String hostname = getDeviceName() + "-" + split(WiFi.macAddress() + ':', ':', 4) + split(WiFi.macAddress() + ':', ':', 5);
+  WiFi.hostname();
   WiFi.begin(ssid, passwd);
 }
 
@@ -420,7 +423,7 @@ void connectWIFIUser(String ssid, String password)
   }
   st += "</ol>";
   delay(100);
-  ssid = ssid + "-" + String(random(999));
+  ssid = DEVICENAME + "-" + split(WiFi.macAddress() + ':', ':', 4) + split(WiFi.macAddress() + ':', ':', 5);
   WiFi.softAP(ssid, password);
   Serial.println("[WIFI] Starting user config mode...");
   Serial.println("");
@@ -600,7 +603,7 @@ void saveOV(String oldversion)
 String loadOV()
 {
   EEPROM.begin(4096);
-    Serial.println("[ULProtection] Loading old version number from EEPROM...");
+  Serial.println("[ULProtection] Loading old version number from EEPROM...");
   String ver = getVersion();
   String esid;
   for (int i = 0; i < ver.length(); i++)
