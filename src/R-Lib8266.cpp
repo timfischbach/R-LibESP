@@ -1,14 +1,19 @@
 /*
+TO DO:
+- Create a Coding Structure for verifying signed binaries.
+- Redirection (Log In WIFI)
+*/
+
+/*
 R-Lib8266 by Tim Fischbach
 Functions:
 - User based Wifi config
 - Sys intern Wifi config
 - Update Functions over 3 ways! (Stable, Beta or Dev)
 - Data Transmission to Update-server for stats.
-- Detecting possible unwanted Update loops
-
-TO DO:
-- Redirection (Log In WIFI)
+- Detecting unwanted Update loops
+- HTTP and HTTPS Update possibilities
+- Overwrite function for expired Root Certificate
 */
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
@@ -16,61 +21,104 @@ TO DO:
 #include <ESP8266httpUpdate.h>
 #include <ESP8266WebServer.h>
 #include <EEPROM.h>
-#include <ESP8266mDNS.h>
+#include <time.h>
 #include "R-Lib8266.h"
 
-const String LIBVERSION = "v1.0.4";
+R_Lib8266::R_Lib8266()
+{
+}
 
-String strinit, initlink, binlink, SSID, PASSWORD, content, st, DEVICENAME, VERSION, dllink;
+const String LIBVERSION = "v2.0.0";
+
+String strInit, initLink, binLink, ssid, content, st, deviceName, version, dlLink;
 String status = "OK";
-int serverstatus, statusCode;
-unsigned long prohibitupdatemillis = 0;
-bool beta = false;
-bool dev = false;
-bool updatelock = false;
-bool lockpassed = false;
+int serverStatus, statusCode;
+unsigned long prohibitUpdateMillis = 0;
+bool betaState = false;
+bool updateLock = false;
+bool lockPassed = false;
+bool timeAndCertificateLoaded = false;
+bool devState = false;
+bool sslState = false;
+bool insecureState = false;
+int attemptsBeforeInsecureSSL = 0;
+
+char rootCACertificate[] = R"EOF(
+-----BEGIN CERTIFICATE-----
+MIIFYDCCBEigAwIBAgIQQAF3ITfU6UK47naqPGQKtzANBgkqhkiG9w0BAQsFADA/
+MSQwIgYDVQQKExtEaWdpdGFsIFNpZ25hdHVyZSBUcnVzdCBDby4xFzAVBgNVBAMT
+DkRTVCBSb290IENBIFgzMB4XDTIxMDEyMDE5MTQwM1oXDTI0MDkzMDE4MTQwM1ow
+TzELMAkGA1UEBhMCVVMxKTAnBgNVBAoTIEludGVybmV0IFNlY3VyaXR5IFJlc2Vh
+cmNoIEdyb3VwMRUwEwYDVQQDEwxJU1JHIFJvb3QgWDEwggIiMA0GCSqGSIb3DQEB
+AQUAA4ICDwAwggIKAoICAQCt6CRz9BQ385ueK1coHIe+3LffOJCMbjzmV6B493XC
+ov71am72AE8o295ohmxEk7axY/0UEmu/H9LqMZshftEzPLpI9d1537O4/xLxIZpL
+wYqGcWlKZmZsj348cL+tKSIG8+TA5oCu4kuPt5l+lAOf00eXfJlII1PoOK5PCm+D
+LtFJV4yAdLbaL9A4jXsDcCEbdfIwPPqPrt3aY6vrFk/CjhFLfs8L6P+1dy70sntK
+4EwSJQxwjQMpoOFTJOwT2e4ZvxCzSow/iaNhUd6shweU9GNx7C7ib1uYgeGJXDR5
+bHbvO5BieebbpJovJsXQEOEO3tkQjhb7t/eo98flAgeYjzYIlefiN5YNNnWe+w5y
+sR2bvAP5SQXYgd0FtCrWQemsAXaVCg/Y39W9Eh81LygXbNKYwagJZHduRze6zqxZ
+Xmidf3LWicUGQSk+WT7dJvUkyRGnWqNMQB9GoZm1pzpRboY7nn1ypxIFeFntPlF4
+FQsDj43QLwWyPntKHEtzBRL8xurgUBN8Q5N0s8p0544fAQjQMNRbcTa0B7rBMDBc
+SLeCO5imfWCKoqMpgsy6vYMEG6KDA0Gh1gXxG8K28Kh8hjtGqEgqiNx2mna/H2ql
+PRmP6zjzZN7IKw0KKP/32+IVQtQi0Cdd4Xn+GOdwiK1O5tmLOsbdJ1Fu/7xk9TND
+TwIDAQABo4IBRjCCAUIwDwYDVR0TAQH/BAUwAwEB/zAOBgNVHQ8BAf8EBAMCAQYw
+SwYIKwYBBQUHAQEEPzA9MDsGCCsGAQUFBzAChi9odHRwOi8vYXBwcy5pZGVudHJ1
+c3QuY29tL3Jvb3RzL2RzdHJvb3RjYXgzLnA3YzAfBgNVHSMEGDAWgBTEp7Gkeyxx
++tvhS5B1/8QVYIWJEDBUBgNVHSAETTBLMAgGBmeBDAECATA/BgsrBgEEAYLfEwEB
+ATAwMC4GCCsGAQUFBwIBFiJodHRwOi8vY3BzLnJvb3QteDEubGV0c2VuY3J5cHQu
+b3JnMDwGA1UdHwQ1MDMwMaAvoC2GK2h0dHA6Ly9jcmwuaWRlbnRydXN0LmNvbS9E
+U1RST09UQ0FYM0NSTC5jcmwwHQYDVR0OBBYEFHm0WeZ7tuXkAXOACIjIGlj26Ztu
+MA0GCSqGSIb3DQEBCwUAA4IBAQAKcwBslm7/DlLQrt2M51oGrS+o44+/yQoDFVDC
+5WxCu2+b9LRPwkSICHXM6webFGJueN7sJ7o5XPWioW5WlHAQU7G75K/QosMrAdSW
+9MUgNTP52GE24HGNtLi1qoJFlcDyqSMo59ahy2cI2qBDLKobkx/J3vWraV0T9VuG
+WCLKTVXkcGdtwlfFRjlBz4pYg1htmf5X6DYO8A4jqv2Il9DjXA6USbW1FzXSLr9O
+he8Y4IWS6wY7bCkjCWDcRQJMEhg76fsO3txE+FiYruq9RUWhiF1myv4Q6W+CyBFC
+Dfvp7OOGAN6dEOM4+qR9sdjoSYKEBpsr6GtPAQw4dy753ec5
+-----END CERTIFICATE-----
+)EOF";
 
 ESP8266WebServer server(80);
 WiFiClient updatewificlient;
 HTTPClient http;
+BearSSL::WiFiClientSecure secureupdatewificlient;
 
-String checkUpdate();
-String split(String s, char parser, int index);
-String performUpdate();
-String dataTransmission();
-void connectWIFI(String ssid, String passwd);
-bool checkWIFI();
-void resetWIFI();
-void saveWIFI(String ssid, String password);
-String loadWIFI(String mode);
-void connectWIFIUser(String ssid, String password);
-void createWebServer();
-String getLibVersion();
-void connectWIFIUserHandle();
-void endWIFIUser();
-String getLibVersion();
-void connectWIFIUserHandle();
-void endWIFIUser();
-void setDeviceName(String DevName);
-String getDeviceName();
-void setVersion(String ver);
-String getVersion();
-void setDlLink(String DLL);
-String getDlLink();
-void setBetaState(bool sbeta);
-bool getBetaState();
-void setDevState(bool sdev);
-bool getDevState();
-bool varCheck();
-void saveOV(String oldversion);
-String loadOV();
+void R_Lib8266::SSLSetup()
+{
+  if (timeAndCertificateLoaded == false)
+  {
+    Serial.println("[SSL Setup] Started SSL Setup!");
+    configTime(2 * 3600, 0, "pool.ntp.org", "time.nist.gov");
 
-void update_started()
+    Serial.print("[SSL Setup] Waiting for NTP time sync...");
+    time_t now = time(nullptr);
+    while (now < 8 * 3600 * 2)
+    {
+      delay(500);
+      Serial.print(".");
+      now = time(nullptr);
+    }
+    Serial.println("");
+    struct tm timeinfo;
+    gmtime_r(&now, &timeinfo);
+    Serial.print("[SSL Setup] Current time: ");
+    Serial.print(asctime(&timeinfo));
+    Serial.println("[SSL Setup] Loading X509 Certificate...");
+    secureupdatewificlient.setTrustAnchors(new BearSSL::X509List(rootCACertificate));
+    timeAndCertificateLoaded = true;
+    Serial.println("[SSL Setup] Finished SSL Setup!");
+  }
+  else
+  {
+    Serial.println("[SSL Setup] Time and Certificate already set!");
+  }
+}
+
+void R_Lib8266::updateStarted()
 {
   Serial.println("[Update] HTTP update process started");
 }
 
-void update_finished()
+void R_Lib8266::updateFinished()
 {
   Serial.print("\n");
   Serial.println("[Update] HTTP update process finished");
@@ -83,18 +131,18 @@ void update_finished()
   Serial.println("[Update] Done writing old version to EEPROM.");
 }
 
-void update_progress(int cur, int total)
+void R_Lib8266::updateProgress(int cur, int total)
 {
   int progress = cur * 100 / total;
   Serial.printf("[Update] HTTP update process at %d of %d bytes. Total Progress: %d % \r", cur, total, progress);
 }
 
-void update_error(int err)
+void R_Lib8266::updateError(int err)
 {
   Serial.printf("[Update] HTTP update fatal error code %d\r", err);
 }
 
-String split(String inputString, char splitChar, int index)
+String R_Lib8266::split(String inputString, char splitChar, int index)
 {
   String rs = "";
   int parserIndex = index;
@@ -116,204 +164,16 @@ String split(String inputString, char splitChar, int index)
   return rs;
 }
 
-String checkUpdate()
-{
-  if (varCheck() == false)
-  {
-    return "NO_VARIABLES_SET";
-  }
-  else
-  {
-    Serial.println("[Update] Update Check Started!\r");
-    Serial.println("[Update] Creating initlink...");
-    if (beta == false and dev == false)
-    {
-      Serial.println("[Update] Stable selected");
-      initlink = dllink + "init";
-    }
-    else if (dev == true)
-    {
-      Serial.println("[Update] Developer mode selected");
-      Serial.println("[Update] Creating Link...");
-      binlink = dllink + "/dev/firmware.bin";
-      Serial.println("[Update] Link created: " + binlink);
-      return "UPDATE_AVAILABLE";
-    }
-    else if (beta == true)
-    {
-      Serial.println("[Update] Beta selected");
-      initlink = dllink + "beta/init";
-    }
-
-    Serial.println("[Update] Link created: " + initlink);
-    http.begin(updatewificlient, initlink);
-    Serial.println("[Update] Connecting to Update Server...");
-    serverstatus = http.GET();
-    delay(100);
-    if (serverstatus == 200)
-    {
-      strinit = http.getString();
-      http.end();
-      String name = split(strinit, '!', 0);
-      String filename = split(strinit, '!', 1);
-      String newversion = split(strinit, '!', 2);
-      Serial.println("[Update] Successfully connected to the update server!\r");
-      Serial.println("[Update] ***READING UPDATE INFOS***");
-      Serial.println("[Update] - Name of the device: " + name);
-      Serial.println("[Update] - Update Version: " + newversion);
-      Serial.println("[Update] ***READING SYSTEM SETTINGS***");
-      Serial.println("[Update] - Device Name: " + DEVICENAME);
-      Serial.println("[Update] - Installed Version: " + VERSION);
-      Serial.println("[Update] - Beta enabled: " + String(beta));
-      if (VERSION == newversion)
-      {
-        Serial.println("[Update] No Update available!\r");
-        return "NO_UPDATE_AVAILABLE";
-      }
-      else
-      {
-        Serial.println("[Update] Update available!");
-        Serial.println("[Update] - Creating DLLink: ");
-        if (beta == true)
-        {
-          binlink = dllink + "beta/" + filename + newversion + ".bin";
-        }
-        else
-        {
-          binlink = dllink + filename + newversion + ".bin";
-        }
-        Serial.println("[Update] " + binlink);
-        return "UPDATE_AVAILABLE";
-      }
-    }
-    else
-    {
-      http.end();
-      Serial.println("[Update] ERROR: UPDATE SERVER DOWN!");
-      return "UPDATE_SERVER_DOWN";
-    }
-  }
-}
-
-String performUpdate()
-{
-  if (varCheck() == false)
-  {
-    return "NO_VARIABLES_SET";
-  }
-  if (updatelock == true and prohibitupdatemillis + 86400000 > millis())
-  {
-    long timeleft = prohibitupdatemillis + 86400000 - millis();
-    timeleft = timeleft / 1000;
-    Serial.println("[Update] ERROR: UPDATE BLOCKED BY UPDATE LOOP PROTECTION");
-    Serial.println("[ULProtection] Time till updating is possible: " + timeleft);
-    return "UPDATE_LOOP_BLOCK";
-  }
-  else if (updatelock == true and prohibitupdatemillis + 86400000 < millis())
-  {
-    Serial.println("[ULProtection] 24 hours passed. Trying to update again!");
-    lockpassed = true;
-  }
-  Serial.println("[ULProtection] Checking old version number...");
-  String oldver;
-  String ver = getVersion();
-  oldver = loadOV();
-  if (oldver == ver)
-  {
-    EEPROM.begin(4096);
-    int stat = EEPROM.read(250);
-    EEPROM.end();
-    stat++;
-    if (stat == 1 or lockpassed == true)
-    {
-      Serial.println("[ULProtection] Downgrade or possible Update loop detected. Continuing with update...");
-      EEPROM.begin(4096);
-      EEPROM.write(250, stat);
-      EEPROM.commit();
-      EEPROM.end();
-    }
-    else
-    {
-      Serial.println("[ULProtection] ERROR: UPDATE LOOP DETECTED!!!");
-      Serial.println("[ULProtection] Disabling updates for the next 24 hours!");
-      status = "ERROR:%20UPDATE%20LOOP%20DETECTED!%20PLEASE%20MATCH%20THE%20VERSION%20IN%20THE%20SOURCECODE%20WITH%20THE%20FILENAME%20VERSION%20AND%20PUSH%20AN%20UPDATE!";
-      updatelock = true;
-      lockpassed = false;
-      prohibitupdatemillis = millis();
-      dataTransmission();
-      EEPROM.begin(4096);
-      EEPROM.write(250, 1);
-      EEPROM.commit();
-      EEPROM.end();
-      return "UPDATE_LOOP_DETECTED";
-    }
-  }
-  else
-  {
-    Serial.println("[ULProtection] Done! No Downgrade or Update Loop detected!");
-    Serial.println("[ULProtection] Continuing with update...");
-    EEPROM.begin(4096);
-    EEPROM.write(250, 0);
-    EEPROM.commit();
-    EEPROM.end();
-  }
-
-  t_httpUpdate_return ret;
-  while (true)
-  {
-    ESPhttpUpdate.onStart(update_started);
-    ESPhttpUpdate.onEnd(update_finished);
-    ESPhttpUpdate.onProgress(update_progress);
-    ESPhttpUpdate.onError(update_error);
-    ret = ESPhttpUpdate.update(updatewificlient, binlink);
-    switch (ret)
-    {
-    case HTTP_UPDATE_FAILED:
-      Serial.printf("[UPDATE] HTTP_UPDATE_FAILD Error (%d): %s\r", ESPhttpUpdate.getLastError(), ESPhttpUpdate.getLastErrorString().c_str());
-      return "HTTP_ERROR";
-      break;
-
-    case HTTP_UPDATE_NO_UPDATES:
-      return "HTTP_UPDATE_NO_UPDATES";
-      break;
-
-    case HTTP_UPDATE_OK:
-      return "HTTP_UPDATE_OK";
-      break;
-    }
-    delay(10); // DDOS Protection maybe slowing update down?
-  }
-}
-
-String dataTransmission()
-{
-  String postData = dllink + "datareceive.php?mac=" + WiFi.macAddress() + "&devicename=" + DEVICENAME + "&fwver=" + VERSION + "&status=" + status;
-  http.begin(updatewificlient, postData);
-  delay(10);
-  int httpCode = http.GET();
-  if (httpCode == 200)
-  {
-    Serial.println("[Update] UserData successfully transmitted!");
-    return "SUCCESS";
-  }
-  else
-  {
-    Serial.println("[Update] Error transmitting UserData!");
-    return "ERROR";
-  }
-}
-
-void connectWIFI(String ssid, String passwd)
+void R_Lib8266::connectWIFI()
 {
   Serial.println("[WIFI] Connecting to WIFI...");
-  SSID = ssid;
-  PASSWORD = passwd;
   String hostname = getDeviceName() + "-" + split(WiFi.macAddress() + ':', ':', 4) + split(WiFi.macAddress() + ':', ':', 5);
   WiFi.hostname();
-  WiFi.begin(ssid, passwd);
+  WiFi.persistent(false);
+  WiFi.begin();
 }
 
-bool checkWIFI()
+bool R_Lib8266::checkWIFI()
 {
   if (WiFi.status() != WL_CONNECTED)
   {
@@ -325,78 +185,28 @@ bool checkWIFI()
   }
 }
 
-void resetWIFI()
+void R_Lib8266::resetWIFI()
 {
+  WiFi.persistent(true);
   WiFi.disconnect();
-  SSID = "";
-  PASSWORD = "";
-  EEPROM.begin(4096);
-  for (int i = 0; i < 96; ++i)
-  {
-    EEPROM.write(i, 0);
-  }
-  EEPROM.commit();
-  EEPROM.end();
-  Serial.println("[WIFI] Successfully reset WiFi!");
+  WiFi.persistent(false);
+  Serial.println("[WIFI] WIFI reset successful.");
 }
 
-void saveWIFI(String ssid, String password)
+void R_Lib8266::saveWIFI(String ssid, String password)
 {
-  EEPROM.begin(4096);
-  Serial.println("[WIFI] Writing SSID to EEPROM:");
-  for (int i = 0; i < ssid.length(); ++i)
-  {
-    EEPROM.write(i, ssid[i]);
-    Serial.print(ssid[i]);
-  }
+  Serial.println("[WIFI] Writing SSID to EEPROM...");
+  WiFi.persistent(true);
+  WiFi.begin(ssid, password);
+  delay(5000);
+  WiFi.persistent(false);
+  WiFi.disconnect();
   Serial.println("[WIFI] Done writing SSID to EEPROM.");
-  Serial.println("[WIFI] Writing Password to EEPROM:");
-  for (int i = 0; i < password.length(); ++i)
-  {
-    EEPROM.write(32 + i, password[i]);
-    Serial.print(password[i]);
-  }
-  EEPROM.commit();
-  EEPROM.end();
-  Serial.println("[WIFI] Done writing SSID to EEPROM.");
-}
-String loadWIFI(String mode)
-{
-  EEPROM.begin(4096);
-  if (mode == "ssid" or mode == "SSID")
-  {
-    String esid;
-    for (int i = 0; i < 32; ++i)
-    {
-      esid += char(EEPROM.read(i));
-    }
-    SSID = esid.c_str();
-    EEPROM.end();
-    Serial.print("[WIFI] Loaded SSID from EEPROM: ");
-    Serial.println(SSID);
-    return SSID;
-  }
-  else if (mode == "password" or mode == "PASSWORD" or mode == "pass" or mode == "PASS")
-  {
-    String epass;
-    for (int i = 32; i < 96; ++i)
-    {
-      epass += char(EEPROM.read(i));
-    }
-    PASSWORD = epass.c_str();
-    EEPROM.end();
-    Serial.print("[WIFI] Loaded Password from EEPROM: ");
-    Serial.println(PASSWORD);
-    return PASSWORD;
-  }
-  else
-  {
-    return "";
-  }
 }
 
-void connectWIFIUser(String ssid, String password)
+void R_Lib8266::connectWIFIUser(String ssid, String password)
 {
+  WiFi.persistent(false);
   WiFi.mode(WIFI_STA);
   WiFi.disconnect();
   delay(100);
@@ -428,7 +238,7 @@ void connectWIFIUser(String ssid, String password)
   }
   st += "</ol>";
   delay(100);
-  ssid = DEVICENAME + "-" + split(WiFi.macAddress() + ':', ':', 4) + split(WiFi.macAddress() + ':', ':', 5);
+  ssid = deviceName + "-" + split(WiFi.macAddress() + ':', ':', 4) + split(WiFi.macAddress() + ':', ':', 5);
   WiFi.softAP(ssid, password);
   Serial.println("[WIFI] Starting user config mode...");
   Serial.println("");
@@ -441,12 +251,11 @@ void connectWIFIUser(String ssid, String password)
   createWebServer();
   // Start the server
   server.begin();
-  MDNS.begin("config");
   Serial.println("[WIFI] Server started");
   Serial.println("[WIFI] User config mode successfully started!");
 }
 
-void createWebServer()
+void R_Lib8266::createWebServer()
 {
   {
     server.on("/", []()
@@ -471,20 +280,12 @@ void createWebServer()
                 content += "<form action=\"/\" method=\"POST\"><input type=\"submit\" value=\"back\"></form>";
                 server.send(200, "text/html", content); });
 
-    server.on("/setting", []()
+    server.on("/setting", [=]()
               {
                 String qsid = server.arg("ssid");
                 String qpass = server.arg("pass");
                 if (qsid.length() > 0 && qpass.length() > 0)
                 {
-                  Serial.println("[WIFI] Clearing EEPROM");
-                  EEPROM.begin(4096);
-                  for (int i = 0; i < 96; ++i)
-                  {
-                    EEPROM.write(i, 0);
-                  }
-                  EEPROM.commit();
-                  EEPROM.end();
                   saveWIFI(qsid, qpass);
 
                   content = "{\"Success\":\"saved to eeprom... reset to boot into new wifi\"}";
@@ -502,76 +303,86 @@ void createWebServer()
   }
 }
 
-String getLibVersion()
+String R_Lib8266::getLibVersion()
 {
   return LIBVERSION;
 }
 
-void connectWIFIUserHandle()
+void R_Lib8266::connectWIFIUserHandle()
 {
   server.handleClient();
 }
 
-void endWIFIUser()
+void R_Lib8266::endWIFIUser()
 {
   server.stop();
 }
 
-void setDeviceName(String DevName)
+void R_Lib8266::setDeviceName(String DevName)
 {
-  DEVICENAME = DevName;
+  deviceName = DevName;
 }
 
-String getDeviceName()
+String R_Lib8266::getDeviceName()
 {
-  return DEVICENAME;
+  return deviceName;
 }
 
-void setVersion(String ver)
+void R_Lib8266::setVersion(String ver)
 {
-  VERSION = ver;
+  version = ver;
 }
 
-String getVersion()
+String R_Lib8266::getVersion()
 {
-  return VERSION;
+  return version;
 }
 
-void setDlLink(String DLL)
+void R_Lib8266::setDlLink(String DLL)
 {
-  dllink = DLL;
+  dlLink = DLL;
 }
 
-String getDlLink()
+String R_Lib8266::getDlLink()
 {
-  return dllink;
+  return dlLink;
 }
 
-void setBetaState(bool sbeta)
+void R_Lib8266::setBetaState(bool sbeta)
 {
-  beta = sbeta;
+  betaState = sbeta;
 }
 
-bool getBetaState()
+bool R_Lib8266::getBetaState()
 {
-  return beta;
+  return betaState;
 }
 
-void setDevState(bool sdev)
+void R_Lib8266::setDevState(bool sdev)
 {
-  dev = sdev;
+  devState = sdev;
 }
 
-bool getDevState()
+bool R_Lib8266::getDevState()
 {
-  return dev;
+  return devState;
 }
 
-bool varCheck()
+void R_Lib8266::setSSLState(bool sssl)
 {
-  if (dev == false)
+  sslState = sssl;
+}
+
+bool R_Lib8266::getSSLState()
+{
+  return sslState;
+}
+
+bool R_Lib8266::varCheck()
+{
+  if (devState == false)
   {
-    if (DEVICENAME.length() == 0 or VERSION.length() == 0 or dllink.length() == 0)
+    if (deviceName.length() == 0 || version.length() == 0 || dlLink.length() == 0)
     {
       return false;
     }
@@ -582,7 +393,7 @@ bool varCheck()
   }
   else
   {
-    if (DEVICENAME.length() == 0 or VERSION.length() == 0 or dllink.length() == 0)
+    if (deviceName.length() == 0 || version.length() == 0 || dlLink.length() == 0)
     {
       return false;
     }
@@ -593,19 +404,29 @@ bool varCheck()
   }
 }
 
-void saveOV(String oldversion)
+void R_Lib8266::saveOV(String oldversion)
 {
   EEPROM.begin(4096);
   Serial.println("[ULProtection] Saving old version number to EEPROM...");
-  for (int i = 0; i < oldversion.length(); i++)
+  if (oldversion.length() > 10)
   {
-    EEPROM.write(i + 96, oldversion[i]);
+    Serial.println("[ULProtection] ERROR! version STRING TOO LONG TO SAVE! REPORTING IT TO THE SERVER!");
+    status = "ERROR:%20VERSION%20STRING%20TOO%20LONG!%20PLEASE%20SET%20YOUR%20VERSION%20STRING%20TO%20MAX.%2010%20CHARACTERS%20LONG!";
+    dataTransmission();
   }
-  EEPROM.commit();
-  EEPROM.end();
-  Serial.println("[ULProtection] Saved old version number to EEPROM.");
+  else
+  {
+    for (int i = 0; i < oldversion.length(); i++)
+    {
+      EEPROM.write(i + 4085, oldversion[i]);
+    }
+    EEPROM.commit();
+    EEPROM.end();
+    Serial.println("[ULProtection] Saved old version number to EEPROM.");
+  }
 }
-String loadOV()
+
+String R_Lib8266::loadOV()
 {
   EEPROM.begin(4096);
   Serial.println("[ULProtection] Loading old version number from EEPROM...");
@@ -613,12 +434,392 @@ String loadOV()
   String esid;
   for (int i = 0; i < ver.length(); i++)
   {
-    char output = EEPROM.read(i + 96);
+    char output = EEPROM.read(i + 4085);
     esid += output;
   }
-  SSID = esid.c_str();
+  ssid = esid.c_str();
   EEPROM.end();
   Serial.print("[ULProtection] Loaded old version number from EEPROM: ");
-  Serial.println(SSID);
-  return SSID;
+  Serial.println(ssid);
+  return ssid;
+}
+
+String R_Lib8266::checkUpdate()
+{
+  const int maxFiles = 100;
+  String fileNames[maxFiles];
+  int fileCount = 0;
+  String url;
+
+  // Make HTTPS request to server directory
+  if (varCheck() == false)
+  {
+    Serial.println("[Update] ERROR: VARIABLES NOT SET IN R-LIB");
+    return "NO_VARIABLES_SET";
+  }
+  if (betaState == true)
+  {
+    url = dlLink + "beta/";
+  }
+  else
+  {
+    url = dlLink;
+  }
+  if (sslState == true)
+  {
+    R_Lib8266::SSLSetup();
+    if (insecureState == true)
+    {
+      secureupdatewificlient.setInsecure();
+      Serial.println("[Secure Update] WARNING! Insecure mode activated! Certificate will not be checked!");
+    }
+    http.begin(secureupdatewificlient, url);
+    Serial.println("[Secure Update] SSL enabled!");
+  }
+  else
+  {
+    http.begin(updatewificlient, url);
+  }
+
+  int httpResponseCode = http.GET();
+  if (httpResponseCode == 301)
+  {
+    // Follow the redirect to the new URL
+    String newUrl = http.getString().substring(9);
+    http.end();
+    if (sslState == true)
+    {
+      if (insecureState == true)
+      {
+        secureupdatewificlient.setInsecure();
+        Serial.println("[Secure Update] WARNING! Insecure mode activated! Certificate will not be checked!");
+      }
+      http.begin(secureupdatewificlient, newUrl);
+    }
+    else
+    {
+      http.begin(updatewificlient, newUrl);
+    }
+    httpResponseCode = http.GET();
+  }
+  if (httpResponseCode == 200)
+  {
+    String response = http.getString();
+    int linkStart = response.indexOf("<a href=");
+    while (linkStart != -1)
+    {
+      int linkEnd = response.indexOf("</a>", linkStart);
+      // Extract file name from HTML link
+      int nameStart = response.indexOf("\">", linkStart) + 2;
+      int nameEnd = response.indexOf("</a>", nameStart);
+      String fileName = response.substring(nameStart, nameEnd);
+      // Check if file name contains "." and doesn't contain "alt="
+      if (fileName.indexOf(".") != -1 && fileName.indexOf("alt=") == -1)
+      {
+        if (fileCount < maxFiles)
+        {
+          fileNames[fileCount] = fileName;
+          fileCount++;
+        }
+        else
+        {
+          Serial.println("Max files reached.");
+          break;
+        }
+      }
+      // Find the next link
+      linkStart = response.indexOf("<a href=", linkEnd);
+    }
+    http.end(); // Close HTTP connection
+    if (sslState == true)
+    {
+      secureupdatewificlient.stop();
+    }
+    else
+    {
+      updatewificlient.stop();
+    }
+    // Print the saved file names
+    Serial.println("[Update] Files found:");
+    for (int i = 0; i < fileCount; i++)
+    {
+      Serial.println("[Update] " + fileNames[i]);
+    }
+    String DEVICENAMEFileName = split(fileNames[0], '_', 0);
+    for (int i = 0; i < fileCount; i++)
+    {
+      fileNames[i] = split(fileNames[i] + '_', '_', 1);
+      fileNames[i] = split(fileNames[i], '.', 0) + '.' + split(fileNames[i], '.', 1) + '.' + split(fileNames[i], '.', 2);
+    }
+    Serial.println("[Update] Extracting Versions:");
+    for (int i = 0; i < fileCount; i++)
+    {
+      Serial.println("[Update] " + fileNames[i]);
+    }
+    //------------------------------version COMPARING----------------------------------------
+
+    int numVersions = sizeof(fileNames) / sizeof(fileNames[0]);
+
+    int currentMajor, currentMinor, currentPatch;
+    sscanf(version.c_str(), "v%d.%d.%d", &currentMajor, &currentMinor, &currentPatch);
+
+    int latestVersionIndex = -1;
+    int latestMajor = currentMajor, latestMinor = currentMinor, latestPatch = currentPatch;
+    char latestVersion[11] = "";
+    for (int i = 0; i < numVersions; i++)
+    {
+      String versionStringPre = fileNames[i];
+      const char *versionString = versionStringPre.c_str();
+      int major, minor, patch;
+      sscanf(versionString, "v%d.%d.%d", &major, &minor, &patch);
+      if (major > currentMajor || (major == currentMajor && minor > currentMinor) || (major == currentMajor && minor == currentMinor && patch > currentPatch))
+      {
+        if (latestVersionIndex == -1 || major > latestMajor || (major == latestMajor && minor > latestMinor) || (major == latestMajor && minor == latestMinor && patch > latestPatch))
+        {
+          latestVersionIndex = i;
+          latestMajor = major;
+          latestMinor = minor;
+          latestPatch = patch;
+          strncpy(latestVersion, versionString, sizeof(latestVersion));
+        }
+      }
+    }
+
+    if (latestVersionIndex == -1)
+    {
+      if (devState == false)
+      {
+        Serial.println("[Update] No update available!\r");
+        return "NO_UPDATE_AVAILABLE";
+      }
+      else
+      {
+        Serial.println("[Update] No update available, but dev mode is active. Creating DLLink anyways: \r");
+        binLink = dlLink + DEVICENAMEFileName + "_" + latestVersion + ".bin";
+        Serial.println("[Update] " + binLink);
+        return "UPDATE_AVAILABLE";
+      }
+    }
+    else
+    {
+      Serial.println("[Update] Successfully connected to the update server!\r");
+      Serial.println("[Update] ***READING UPDATE INFOS***");
+      Serial.println("[Update] - Name of the device: " + DEVICENAMEFileName);
+      Serial.print("[Update] - Update Version: ");
+      Serial.println(latestVersion);
+      Serial.println("[Update] ***READING SYSTEM INFOS***");
+      Serial.println("[Update] - Device Name: " + deviceName);
+      Serial.println("[Update] - Installed Version: " + version);
+      Serial.println("[Update] - Beta enabled: " + String(betaState));
+      Serial.println("[Update] - SSL enabled: " + sslState);
+      Serial.println("[Update] Update available!");
+      Serial.println("[Update] Creating DLLink: ");
+      binLink = dlLink + DEVICENAMEFileName + "_" + latestVersion + ".bin";
+      Serial.println("[Update] " + binLink);
+      return "UPDATE_AVAILABLE";
+    }
+  }
+  else
+  {
+    Serial.print("[Update] Error connecting to the server: ");
+    Serial.println(httpResponseCode);
+    executeAttemptsBeforeInsecureSSL();
+    return "UPDATE_SERVER_DOWN";
+  }
+}
+
+String R_Lib8266::performUpdate()
+{
+  if (sslState == true)
+  {
+    R_Lib8266::SSLSetup();
+    if (insecureState == true)
+    {
+      secureupdatewificlient.setInsecure();
+      Serial.println("[Secure Update] WARNING! Insecure mode activated! Certificate will not be checked!");
+    }
+  }
+  if (updateLock == true and prohibitUpdateMillis + 86400000 > millis())
+  {
+    long timeleft = prohibitUpdateMillis + 86400000 - millis();
+    timeleft = timeleft / 1000;
+    Serial.println("[Update] ERROR: UPDATE BLOCKED BY UPDATE LOOP PROTECTION");
+    Serial.println("[ULProtection] Time till updating is possible: " + timeleft);
+    return "UPDATE_LOOP_BLOCK";
+  }
+  else if (updateLock == true and prohibitUpdateMillis + 86400000 < millis())
+  {
+    Serial.println("[ULProtection] 24 hours passed. Trying to update again!");
+    lockPassed = true;
+  }
+  Serial.println("[ULProtection] Checking old version number...");
+  String oldver;
+  String ver = getVersion();
+  oldver = loadOV();
+  if (oldver == ver)
+  {
+    EEPROM.begin(4096);
+    int stat = EEPROM.read(4095);
+    EEPROM.end();
+    stat++;
+    if (stat == 1 or lockPassed == true)
+    {
+      Serial.println("[ULProtection] Downgrade or possible Update loop detected. Continuing with update...");
+      EEPROM.begin(4096);
+      EEPROM.write(4095, stat);
+      EEPROM.commit();
+      EEPROM.end();
+    }
+    else
+    {
+      Serial.println("[ULProtection] ERROR: UPDATE LOOP DETECTED!!!");
+      Serial.println("[ULProtection] Disabling updates for the next 24 hours!");
+      status = "ERROR:%20UPDATE%20LOOP%20DETECTED!%20PLEASE%20MATCH%20THE%20VERSION%20IN%20THE%20SOURCECODE%20WITH%20THE%20FILENAME%20VERSION%20AND%20PUSH%20AN%20UPDATE!";
+      updateLock = true;
+      lockPassed = false;
+      prohibitUpdateMillis = millis();
+      dataTransmission();
+      EEPROM.begin(4096);
+      EEPROM.write(4095, 1);
+      EEPROM.commit();
+      EEPROM.end();
+      return "UPDATE_LOOP_DETECTED";
+    }
+  }
+  else
+  {
+    Serial.println("[ULProtection] Done! No Downgrade or Update Loop detected!");
+    Serial.println("[ULProtection] Continuing with update...");
+    EEPROM.begin(4096);
+    EEPROM.write(4095, 0);
+    EEPROM.commit();
+    EEPROM.end();
+  }
+
+  t_httpUpdate_return ret;
+  while (true)
+  {
+    ESPhttpUpdate.onStart([this]()
+                          { updateStarted(); });
+    ESPhttpUpdate.onEnd([this]()
+                        { updateFinished(); });
+    ESPhttpUpdate.onProgress([this](int cur, int total)
+                             { updateProgress(cur, total); });
+    ESPhttpUpdate.onError([this](int err)
+                          { updateError(err); });
+    if (sslState == true)
+    {
+      ret = ESPhttpUpdate.update(secureupdatewificlient, binLink);
+    }
+    else
+    {
+      ret = ESPhttpUpdate.update(updatewificlient, binLink);
+    }
+    switch (ret)
+    {
+    case HTTP_UPDATE_FAILED:
+      Serial.print("[Update] HTTP_UPDATE_FAILED Error ");
+      Serial.printf("(%d): %s\r", ESPhttpUpdate.getLastError(), ESPhttpUpdate.getLastErrorString().c_str());
+      return "HTTP_ERROR";
+      break;
+
+    case HTTP_UPDATE_NO_UPDATES:
+      return "HTTP_UPDATE_NO_UPDATES";
+      break;
+
+    case HTTP_UPDATE_OK:
+      return "HTTP_UPDATE_OK";
+      break;
+    }
+    // delay(10); // DDOS Protection maybe slowing update down?
+  }
+}
+
+void R_Lib8266::setSSLRootCertificate(char certificate[])
+{
+  strcpy(rootCACertificate, certificate);
+}
+
+void R_Lib8266::setSSLInsecureState(bool sinsecure)
+{
+  insecureState = sinsecure;
+}
+
+bool R_Lib8266::getSSLInsecureState()
+{
+  return insecureState;
+}
+
+String R_Lib8266::dataTransmission()
+{
+  String postData = dlLink + "datareceive.php?mac=" + WiFi.macAddress() + "&devicename=" + deviceName + "&fwver=" + version + "&status=" + status;
+  if (sslState == true)
+  {
+    if (insecureState == true)
+    {
+      secureupdatewificlient.setInsecure();
+      Serial.println("[Secure Update] WARNING! Insecure mode activated! Certificate will not be checked!");
+    }
+    http.begin(secureupdatewificlient, postData);
+  }
+  else
+  {
+    http.begin(updatewificlient, postData);
+  }
+  delay(10);
+  int httpCode = http.GET();
+  if (httpCode == 200)
+  {
+    Serial.println("[Update] UserData successfully transmitted!");
+    return "SUCCESS";
+  }
+  else
+  {
+    Serial.println("[Update] Error transmitting UserData: " + httpCode);
+    return "ERROR";
+  }
+}
+
+void R_Lib8266::setAttemptsBeforeInsecureSSL(int sattempts)
+{
+  attemptsBeforeInsecureSSL = sattempts;
+}
+
+int R_Lib8266::getAttemptsBeforeInsecureSSL()
+{
+  return attemptsBeforeInsecureSSL;
+}
+
+void R_Lib8266::executeAttemptsBeforeInsecureSSL()
+{
+  if (attemptsBeforeInsecureSSL > 0)
+  {
+    Serial.println("[SSL Setup] Insecure SSL after X Attempts enabled!");
+    EEPROM.begin(4096);
+    Serial.println("[SSL Setup] Loading Insecure SSL after X Attempts value...");
+    int output = EEPROM.read(4084);
+    Serial.println(output);
+    if (output > 9 || output < 0)
+    {
+      output = 0;
+    }
+    output++;
+    if (output > attemptsBeforeInsecureSSL)
+    {
+      Serial.println("[SSL Setup] Max Attempts reached! Enabling Insecure SSL...");
+      setSSLInsecureState(true);
+      EEPROM.write(4084, 0);
+    }
+    else
+    {
+      Serial.println("[SSL Setup] Max Attempts not reached. Continuing with Secure SSL...");
+      EEPROM.write(4084, output);
+    }
+    EEPROM.commit();
+    EEPROM.end();
+  }
+  else
+  {
+    Serial.println("[SSL Setup] Insecure SSL after X Attempts disabled. Continuing with normal SSL operation...");
+  }
 }

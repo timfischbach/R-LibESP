@@ -2,25 +2,14 @@
 #define R_Lib8266_h
 
 #include <Arduino.h>
-#include <ESP8266WiFi.h>
-#include <ESP8266HTTPClient.h>
-#include <ESP8266httpUpdate.h>
-#include <ESP8266WebServer.h>
-#include <EEPROM.h>
-#include <ESP8266mDNS.h>
 
 class R_Lib8266
 {
 public:
     R_Lib8266();
-
-
     String checkUpdate();
-    String secureCheckUpdate();
     String split(String s, char parser, int index);
     String performUpdate();
-    String securePerformUpdate();
-    String dataTransmission();
     void connectWIFI();
     bool checkWIFI();
     void resetWIFI();
@@ -43,21 +32,23 @@ public:
     bool varCheck();
     void saveOV(String oldversion);
     String loadOV();
-    void update_started();
-    void update_finished();
-    void update_progress(int cur, int total);
-    void update_error(int err);
+    void updateStarted();
+    void updateFinished();
+    void updateProgress(int cur, int total);
+    void updateError(int err);
+    void setSSLRootCertificate(char *certificate);
+    bool getSSLState();
+    void setSSLState(bool sssl);
+    void setSSLInsecureState(bool sinsecure);
+    bool getSSLInsecureState();
+    void SSLSetup();
+    String dataTransmission();
+    void setAttemptsBeforeInsecureSSL(int sattempts);
+    int getAttemptsBeforeInsecureSSL();
+    void executeAttemptsBeforeInsecureSSL();
 
 private:
 
-
-    String libVersion;
-    int progress;
-    String deviceName;
-    String version;
-    String dlLink;
-    bool betaState;
-    bool devState;
 };
 
 #endif
