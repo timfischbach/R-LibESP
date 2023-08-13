@@ -30,7 +30,7 @@ R_Lib8266::R_Lib8266()
 
 const String LIBVERSION = "v2.0.0";
 
-String strInit, initLink, binLink, ssid, content, st, deviceName, version, dlLink;
+String strInit, initLink, binLink, content, st, deviceName, version, dlLink;
 String status = "OK";
 int serverStatus, statusCode;
 unsigned long prohibitUpdateMillis = 0;
@@ -428,6 +428,7 @@ void R_Lib8266::saveOV(String oldversion)
 
 String R_Lib8266::loadOV()
 {
+  String oldVersion;
   EEPROM.begin(4096);
   Serial.println("[ULProtection] Loading old version number from EEPROM...");
   String ver = getVersion();
@@ -437,11 +438,11 @@ String R_Lib8266::loadOV()
     char output = EEPROM.read(i + 4085);
     esid += output;
   }
-  ssid = esid.c_str();
+  oldVersion = esid.c_str();
   EEPROM.end();
   Serial.print("[ULProtection] Loaded old version number from EEPROM: ");
-  Serial.println(ssid);
-  return ssid;
+  Serial.println(oldVersion);
+  return oldVersion;
 }
 
 String R_Lib8266::checkUpdate()
