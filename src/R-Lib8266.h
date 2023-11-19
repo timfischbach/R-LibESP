@@ -2,6 +2,13 @@
 #define R_Lib8266_h
 
 #include <Arduino.h>
+#include <ESP8266WiFi.h>
+#include <ESP8266HTTPClient.h>
+#include <ESP8266httpUpdate.h>
+#include <ESP8266WebServer.h>
+#include <EEPROM.h>
+#include <time.h>
+#include "R-Lib8266.h"
 
 class R_Lib8266
 {
@@ -42,13 +49,12 @@ public:
     void setSSLInsecureState(bool sinsecure);
     bool getSSLInsecureState();
     void SSLSetup();
-    String dataTransmission();
+    String dataTransmission(String status = "OK");
     void setAttemptsBeforeInsecureSSL(int sattempts);
     int getAttemptsBeforeInsecureSSL();
     void executeAttemptsBeforeInsecureSSL();
 
 private:
-
 };
 
 #endif
