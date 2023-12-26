@@ -28,10 +28,9 @@ R_Lib8266::R_Lib8266()
 {
 }
 
-const String LIBVERSION = "v2.0.0";
+const String LIBVERSION = "v2.1.0";
 
 String strInit, initLink, binLink, content, st, deviceName, version, dlLink;
-String status = "OK";
 int serverStatus, statusCode;
 unsigned long prohibitUpdateMillis = 0;
 bool betaState = false;
@@ -411,8 +410,7 @@ void R_Lib8266::saveOV(String oldversion)
   if (oldversion.length() > 10)
   {
     Serial.println("[ULProtection] ERROR! version STRING TOO LONG TO SAVE! REPORTING IT TO THE SERVER!");
-    status = "ERROR:%20VERSION%20STRING%20TOO%20LONG!%20PLEASE%20SET%20YOUR%20VERSION%20STRING%20TO%20MAX.%2010%20CHARACTERS%20LONG!";
-    dataTransmission();
+    dataTransmission("ERROR:%20VERSION%20STRING%20TOO%20LONG!%20PLEASE%20SET%20YOUR%20VERSION%20STRING%20TO%20MAX.%2010%20CHARACTERS%20LONG!");
   }
   else
   {
@@ -675,11 +673,10 @@ String R_Lib8266::performUpdate()
     {
       Serial.println("[ULProtection] ERROR: UPDATE LOOP DETECTED!!!");
       Serial.println("[ULProtection] Disabling updates for the next 24 hours!");
-      status = "ERROR:%20UPDATE%20LOOP%20DETECTED!%20PLEASE%20MATCH%20THE%20VERSION%20IN%20THE%20SOURCECODE%20WITH%20THE%20FILENAME%20VERSION%20AND%20PUSH%20AN%20UPDATE!";
       updateLock = true;
       lockPassed = false;
       prohibitUpdateMillis = millis();
-      dataTransmission();
+      dataTransmission("ERROR:%20UPDATE%20LOOP%20DETECTED!%20PLEASE%20MATCH%20THE%20VERSION%20IN%20THE%20SOURCECODE%20WITH%20THE%20FILENAME%20VERSION%20AND%20PUSH%20AN%20UPDATE!");
       EEPROM.begin(4096);
       EEPROM.write(4095, 1);
       EEPROM.commit();
@@ -751,9 +748,10 @@ bool R_Lib8266::getSSLInsecureState()
   return insecureState;
 }
 
-String R_Lib8266::dataTransmission()
+String R_Lib8266::dataTransmission(String status)
 {
-  String postData = dlLink + "datareceive.php?mac=" + WiFi.macAddress() + "&devicename=" + deviceName + "&fwver=" + version + "&status=" + status;
+
+  String postData = dlLink + "datareceive.php?mac=" + WiFi.macAddress() + "&devicename=" + deviceName + "&fwver=" + version + "&status=" + urlEncode(status);
   if (sslState == true)
   {
     if (insecureState == true)
@@ -823,4 +821,39 @@ void R_Lib8266::executeAttemptsBeforeInsecureSSL()
   {
     Serial.println("[SSL Setup] Insecure SSL after X Attempts disabled. Continuing with normal SSL operation...");
   }
+}
+
+String R_Lib8266::urlEncode(String str)
+{
+    String encodedString="";
+    char c;
+    char code0;
+    char code1;
+    char code2;
+    for (int i =0; i < str.length(); i++){
+      c=str.charAt(i);
+      if (c == ' '){
+        encodedString+= '+';
+      } else if (isalnum(c)){
+        encodedString+=c;
+      } else{
+        code1=(c & 0xf)+'0';
+        if ((c & 0xf) >9){
+            code1=(c & 0xf) - 10 + 'A';
+        }
+        c=(c>>4)&0xf;
+        code0=c+'0';
+        if (c > 9){
+            code0=c - 10 + 'A';
+        }
+        code2='\0';
+        encodedString+='%';
+        encodedString+=code0;
+        encodedString+=code1;
+        //encodedString+=code2;
+      }
+      yield();
+    }
+    return encodedString;
+    
 }
