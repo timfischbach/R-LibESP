@@ -33,7 +33,7 @@ void setup()
 }
    void loop()
    {
-      rlib.dataTransmission();
+      rlib.dataTransmission("Hallo! Ich habe - viele ' Leerzeichen und so");
       delay(1000);
       if (rlib.checkUpdate() == "UPDATE_AVAILABLE")
       {

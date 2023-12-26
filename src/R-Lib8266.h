@@ -53,6 +53,7 @@ public:
     void setAttemptsBeforeInsecureSSL(int sattempts);
     int getAttemptsBeforeInsecureSSL();
     void executeAttemptsBeforeInsecureSSL();
+    String urlEncode(String str);
 
 private:
 };
