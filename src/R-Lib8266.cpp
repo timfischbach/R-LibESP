@@ -289,6 +289,7 @@ void R_Lib8266::createWebServer()
 
                   content = "{\"Success\":\"saved to eeprom... reset to boot into new wifi\"}";
                   statusCode = 200;
+                  server.handleClient();
                   ESP.reset();
                 }
                 else
@@ -410,7 +411,7 @@ void R_Lib8266::saveOV(String oldversion)
   if (oldversion.length() > 10)
   {
     Serial.println("[ULProtection] ERROR! version STRING TOO LONG TO SAVE! REPORTING IT TO THE SERVER!");
-    dataTransmission("ERROR:%20VERSION%20STRING%20TOO%20LONG!%20PLEASE%20SET%20YOUR%20VERSION%20STRING%20TO%20MAX.%2010%20CHARACTERS%20LONG!");
+    dataTransmission("ERROR: VERSION STRING TOO LONG! PLEASE SET YOUR VERSION STRING TO MAX. 10 CHARACTERS LONG!");
   }
   else
   {
@@ -676,7 +677,7 @@ String R_Lib8266::performUpdate()
       updateLock = true;
       lockPassed = false;
       prohibitUpdateMillis = millis();
-      dataTransmission("ERROR:%20UPDATE%20LOOP%20DETECTED!%20PLEASE%20MATCH%20THE%20VERSION%20IN%20THE%20SOURCECODE%20WITH%20THE%20FILENAME%20VERSION%20AND%20PUSH%20AN%20UPDATE!");
+      dataTransmission("ERROR: UPDATE LOOP DETECTED! PLEASE MATCH THE VERSION IN THE SOURCE CODE WITH THE FILENAME VERSION AND PUSH AN UPDATE!");
       EEPROM.begin(4096);
       EEPROM.write(4095, 1);
       EEPROM.commit();
