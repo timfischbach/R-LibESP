@@ -5,7 +5,7 @@ TO DO:
 */
 
 /*
-R-Lib8266 by Tim Fischbach
+R-LibESP by Tim Fischbach
 Functions:
 - User based Wifi config
 - Sys intern Wifi config
@@ -16,19 +16,32 @@ Functions:
 - Overwrite function for expired Root Certificate
 */
 #include <Arduino.h>
+#include <DNSServer.h>
+#include <EEPROM.h>
+#include <time.h>
+
+#if defined(ESP8266)
 #include <ESP8266WiFi.h>
 #include <ESP8266HTTPClient.h>
 #include <ESP8266httpUpdate.h>
 #include <ESP8266WebServer.h>
-#include <EEPROM.h>
-#include <time.h>
-#include "R-Lib8266.h"
+#elif defined(ESP32)
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <HttpUpdate.h>
+#include <WebServer.h>
+#include <WiFiClientSecure.h>
+#include <Preferences.h>
+#else
+#error "This is not an Espressif board!"
+#endif
+#include "R-LibESP.h"
 
-R_Lib8266::R_Lib8266()
+R_LibESP::R_LibESP()
 {
 }
 
-const String LIBVERSION = "v2.1.0";
+const String LIBVERSION = "v1.0.0";
 
 String strInit, initLink, binLink, content, st, deviceName, version, dlLink;
 int serverStatus, statusCode;
@@ -76,12 +89,21 @@ Dfvp7OOGAN6dEOM4+qR9sdjoSYKEBpsr6GtPAQw4dy753ec5
 -----END CERTIFICATE-----
 )EOF";
 
-ESP8266WebServer server(80);
-WiFiClient updatewificlient;
-HTTPClient http;
-BearSSL::WiFiClientSecure secureupdatewificlient;
+const byte DNS_PORT = 53;
+IPAddress RLibAPIP(8, 8, 8, 8);
+DNSServer RLibDnsServer;
+WiFiClient RLibWifiClient;
+HTTPClient RLibHttpClient;
+#if defined(ESP8266)
+BearSSL::WiFiClientSecure RLibSecureWifiClient;
+ESP8266WebServer RLibHttpServer(80);
+#elif defined(ESP32)
+WiFiClientSecure RLibSecureWifiClient;
+Preferences preferences;
+WebServer RLibHttpServer(80);
+#endif
 
-void R_Lib8266::SSLSetup()
+void R_LibESP::SSLSetup()
 {
   if (timeAndCertificateLoaded == false)
   {
@@ -102,7 +124,11 @@ void R_Lib8266::SSLSetup()
     Serial.print("[SSL Setup] Current time: ");
     Serial.print(asctime(&timeinfo));
     Serial.println("[SSL Setup] Loading X509 Certificate...");
-    secureupdatewificlient.setTrustAnchors(new BearSSL::X509List(rootCACertificate));
+#if defined(ESP8266)
+    RLibSecureWifiClient.setTrustAnchors(new BearSSL::X509List(rootCACertificate));
+#elif defined(ESP32)
+    RLibSecureWifiClient.setCACert(rootCACertificate);
+#endif
     timeAndCertificateLoaded = true;
     Serial.println("[SSL Setup] Finished SSL Setup!");
   }
@@ -112,12 +138,12 @@ void R_Lib8266::SSLSetup()
   }
 }
 
-void R_Lib8266::updateStarted()
+void R_LibESP::updateStarted()
 {
   Serial.println("[Update] HTTP update process started");
 }
 
-void R_Lib8266::updateFinished()
+void R_LibESP::updateFinished()
 {
   Serial.print("\n");
   Serial.println("[Update] HTTP update process finished");
@@ -130,18 +156,18 @@ void R_Lib8266::updateFinished()
   Serial.println("[Update] Done writing old version to EEPROM.");
 }
 
-void R_Lib8266::updateProgress(int cur, int total)
+void R_LibESP::updateProgress(int cur, int total)
 {
   int progress = cur * 100 / total;
   Serial.printf("[Update] HTTP update process at %d of %d bytes. Total Progress: %d % \r", cur, total, progress);
 }
 
-void R_Lib8266::updateError(int err)
+void R_LibESP::updateError(int err)
 {
   Serial.printf("[Update] HTTP update fatal error code %d\r", err);
 }
 
-String R_Lib8266::split(String inputString, char splitChar, int index)
+String R_LibESP::split(String inputString, char splitChar, int index)
 {
   String rs = "";
   int parserIndex = index;
@@ -163,16 +189,25 @@ String R_Lib8266::split(String inputString, char splitChar, int index)
   return rs;
 }
 
-void R_Lib8266::connectWIFI()
+void R_LibESP::connectWIFI()
 {
   Serial.println("[WIFI] Connecting to WIFI...");
   String hostname = getDeviceName() + "-" + split(WiFi.macAddress() + ':', ':', 4) + split(WiFi.macAddress() + ':', ':', 5);
-  WiFi.hostname();
+  WiFi.setHostname(hostname.c_str());
+#if defined(ESP8266)
   WiFi.persistent(false);
   WiFi.begin();
+#elif defined(ESP32)
+  preferences.begin("credentials", false);
+  String ssid = preferences.getString("ssid", "");
+  String password = preferences.getString("password", "");
+  preferences.end();
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid.c_str(), password.c_str());
+#endif
 }
 
-bool R_Lib8266::checkWIFI()
+bool R_LibESP::checkWIFI()
 {
   if (WiFi.status() != WL_CONNECTED)
   {
@@ -184,26 +219,41 @@ bool R_Lib8266::checkWIFI()
   }
 }
 
-void R_Lib8266::resetWIFI()
+void R_LibESP::resetWIFI()
 {
+#if defined(ESP8266)
   WiFi.persistent(true);
   WiFi.disconnect();
   WiFi.persistent(false);
+#elif defined(ESP32)
+  WiFi.disconnect();
+  preferences.begin("credentials", false);
+  preferences.putString("ssid", "");
+  preferences.putString("password", "");
+  preferences.end();
+#endif
   Serial.println("[WIFI] WIFI reset successful.");
 }
 
-void R_Lib8266::saveWIFI(String ssid, String password)
+void R_LibESP::saveWIFI(String ssid, String password)
 {
   Serial.println("[WIFI] Writing SSID to EEPROM...");
+#if defined(ESP8266)
   WiFi.persistent(true);
   WiFi.begin(ssid, password);
-  delay(5000);
+  delay(3000);
   WiFi.persistent(false);
   WiFi.disconnect();
+#elif defined(ESP32)
+  preferences.begin("credentials", false);
+  preferences.putString("ssid", ssid);
+  preferences.putString("password", password);
+  preferences.end();
+#endif
   Serial.println("[WIFI] Done writing SSID to EEPROM.");
 }
 
-void R_Lib8266::connectWIFIUser(String ssid, String password)
+void R_LibESP::connectWIFIUser(String ssid, String password)
 {
   WiFi.persistent(false);
   WiFi.mode(WIFI_STA);
@@ -232,13 +282,19 @@ void R_Lib8266::connectWIFIUser(String ssid, String password)
     st += WiFi.RSSI(i);
 
     st += ")";
+#if defined(ESP8266)
     st += (WiFi.encryptionType(i) == ENC_TYPE_NONE) ? " " : "*";
+#elif defined(ESP32)
+    st += (WiFi.encryptionType(i)) ? " " : "*";
+#endif
     st += "</li>";
   }
   st += "</ol>";
   delay(100);
   ssid = deviceName + "-" + split(WiFi.macAddress() + ':', ':', 4) + split(WiFi.macAddress() + ':', ':', 5);
+  WiFi.softAPConfig(RLibAPIP, RLibAPIP, IPAddress(255, 255, 255, 0));
   WiFi.softAP(ssid, password);
+  RLibDnsServer.start(DNS_PORT, "*", RLibAPIP);
   Serial.println("[WIFI] Starting user config mode...");
   Serial.println("");
   if (WiFi.status() == WL_CONNECTED)
@@ -249,136 +305,166 @@ void R_Lib8266::connectWIFIUser(String ssid, String password)
   Serial.println(WiFi.softAPIP());
   createWebServer();
   // Start the server
-  server.begin();
+  RLibHttpServer.begin();
   Serial.println("[WIFI] Server started");
   Serial.println("[WIFI] User config mode successfully started!");
 }
 
-void R_Lib8266::createWebServer()
+void R_LibESP::createWebServer()
 {
   {
-    server.on("/", []()
-              {
-                IPAddress ip = WiFi.softAPIP();
-                String ipStr = String(ip[0]) + '.' + String(ip[1]) + '.' + String(ip[2]) + '.' + String(ip[3]);
-                content = "<!DOCTYPE HTML>\r\n<html>R-Lib8266 " + LIBVERSION + " by Tim Fischbach at ";
-                content += ipStr;
-                content += "<form action=\"/scan\" method=\"POST\"><input type=\"submit\" value=\"scan\"></form>";
-                content += "<p>";
-                content += st;
-                content += "</p><form method='get' action='setting'><label>SSID: </label><input name='ssid' length=32><label> Password: </label><input name='pass' length=64><input type='submit'></form>";
-                content += "</html>";
-                server.send(200, "text/html", content); });
-    server.on("/scan", []()
-              {
-                //setupAP();
-                IPAddress ip = WiFi.softAPIP();
-                String ipStr = String(ip[0]) + '.' + String(ip[1]) + '.' + String(ip[2]) + '.' + String(ip[3]);
-
-                content = "<!DOCTYPE HTML>\r\n<html>Scan success! Please go back!";
-                content += "<form action=\"/\" method=\"POST\"><input type=\"submit\" value=\"back\"></form>";
-                server.send(200, "text/html", content); });
-
-    server.on("/setting", [=]()
-              {
-                String qsid = server.arg("ssid");
-                String qpass = server.arg("pass");
-                if (qsid.length() > 0 && qpass.length() > 0)
-                {
-                  saveWIFI(qsid, qpass);
-
-                  content = "{\"Success\":\"saved to eeprom... reset to boot into new wifi\"}";
-                  statusCode = 200;
-                  server.handleClient();
-                  ESP.reset();
+    RLibHttpServer.onNotFound([]()
+                              // RLibHttpServer.on("/", [=]()
+                              {
+                String networks;
+                int numNetworks = WiFi.scanNetworks();
+                if (numNetworks == 0) {
+                  networks = "<p>No networks found</p>";
+                } else {
+                  networks = "<div class='networks'>";
+                  for (int i = 0; i < numNetworks; ++i) {
+                    networks += "<div class='network'><a href='/password?ssid=" + WiFi.SSID(i) + "' class='network-name'>" + WiFi.SSID(i) + "</a></div>";
+                  }
+                  networks += "</div>";
                 }
-                else
-                {
-                  content = "{\"Error\":\"404 not found\"}";
-                  statusCode = 404;
-                  Serial.println("Sending 404");
-                }
-                server.sendHeader("Access-Control-Allow-Origin", "*");
-                server.send(statusCode, "application/json", content); });
+
+                content = "<!DOCTYPE HTML>\r\n<html><head><meta name='viewport' content='width=device-width, initial-scale=1.0'>";
+                content += "<style>";
+                content += "body { font-family: Arial, sans-serif; margin: 0; padding: 0; text-align: center; background-color: #f4f4f4; }";
+                content += ".networks { display: flex; flex-wrap: wrap; justify-content: center; padding: 20px; }";
+                content += ".network { background-color: #ffffff; border-radius: 10px; padding: 15px; margin: 10px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); }";
+                content += ".network a { text-decoration: none; color: #333333; }";
+                content += ".network a:hover { color: #666666; }";
+                content += "</style></head>";
+                content += "<body><h1>Select your Wi-Fi Network</h1>";
+                content += "<p>R-LibESP " + LIBVERSION + " by Tim Fischbach running on device " + deviceName + " " + version + "</p>";
+                content += networks;
+                content += "</body></html>";
+                RLibHttpServer.send(200, "text/html", content); });
+
+    RLibHttpServer.on("/password", [=]()
+                      {
+                String ssid = RLibHttpServer.arg("ssid");
+
+                content = "<!DOCTYPE HTML>\r\n<html><head><meta name='viewport' content='width=device-width, initial-scale=1.0'>";
+                content += "<style>";
+                content += "body { font-family: Arial, sans-serif; margin: 0; padding: 0; text-align: center; background-color: #f4f4f4; }";
+                content += "form { margin-top: 20px; }";
+                content += "label { display: block; margin-bottom: 10px; }";
+                content += "input[type='text'] { width: 90%; padding: 10px; margin-bottom: 10px; border: 1px solid #cccccc; border-radius: 5px; }";
+                content += "input[type='submit'] { background-color: #4CAF50; color: #ffffff; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; }";
+                content += "</style></head>";
+                content += "<body><h1>Enter Password for " + ssid + "</h1>";
+                content += "<form action='/connect' method='POST'>";
+                content += "<input type='hidden' name='ssid' value='" + ssid + "'>";
+                content += "<label>Password: </label><br><input type='password' name='pass' placeholder='Enter Password' required><br>";
+                content += "<input type='submit' value='Connect'></form>";
+                content += "</body></html>";
+                RLibHttpServer.send(200, "text/html", content); });
+
+    RLibHttpServer.on("/connect", [=]()
+                      {
+                        String ssid = RLibHttpServer.arg("ssid");
+                        String pass = RLibHttpServer.arg("pass");
+                        saveWIFI(ssid, pass);
+                        content = "<!DOCTYPE HTML>\r\n<html><head><meta name='viewport' content='width=device-width, initial-scale=1.0'>";
+                        content += "<style>";
+                        content += "body { font-family: Arial, sans-serif; margin: 0; padding: 0; text-align: center; background-color: #f4f4f4; }";
+                        content += "h1 { margin-top: 20px; }";
+                        content += "p { margin-bottom: 20px; }";
+                        content += "</style></head>";
+                        content += "<body><h1>Connecting to " + ssid + "...</h1>";
+                        content += "<p>This device will now reboot. It'll try to connect to your network.</p>";
+                        content += "</body></html>";
+                        RLibHttpServer.send(200, "text/html", content);
+                        RLibHttpServer.handleClient();
+                        delay(1000);
+#if defined(ESP8266)
+                        ESP.reset();
+#elif defined(ESP32)
+          ESP.restart();
+#endif
+                      });
   }
 }
 
-String R_Lib8266::getLibVersion()
+void R_LibESP::connectWIFIUserHandle()
+{
+  RLibHttpServer.handleClient();
+  RLibDnsServer.processNextRequest();
+}
+
+String R_LibESP::getLibVersion()
 {
   return LIBVERSION;
 }
 
-void R_Lib8266::connectWIFIUserHandle()
+void R_LibESP::endWIFIUser()
 {
-  server.handleClient();
+  RLibHttpServer.stop();
 }
 
-void R_Lib8266::endWIFIUser()
-{
-  server.stop();
-}
-
-void R_Lib8266::setDeviceName(String DevName)
+void R_LibESP::setDeviceName(String DevName)
 {
   deviceName = DevName;
 }
 
-String R_Lib8266::getDeviceName()
+String R_LibESP::getDeviceName()
 {
   return deviceName;
 }
 
-void R_Lib8266::setVersion(String ver)
+void R_LibESP::setVersion(String ver)
 {
   version = ver;
 }
 
-String R_Lib8266::getVersion()
+String R_LibESP::getVersion()
 {
   return version;
 }
 
-void R_Lib8266::setDlLink(String DLL)
+void R_LibESP::setDlLink(String DLL)
 {
   dlLink = DLL;
 }
 
-String R_Lib8266::getDlLink()
+String R_LibESP::getDlLink()
 {
   return dlLink;
 }
 
-void R_Lib8266::setBetaState(bool sbeta)
+void R_LibESP::setBetaState(bool sbeta)
 {
   betaState = sbeta;
 }
 
-bool R_Lib8266::getBetaState()
+bool R_LibESP::getBetaState()
 {
   return betaState;
 }
 
-void R_Lib8266::setDevState(bool sdev)
+void R_LibESP::setDevState(bool sdev)
 {
   devState = sdev;
 }
 
-bool R_Lib8266::getDevState()
+bool R_LibESP::getDevState()
 {
   return devState;
 }
 
-void R_Lib8266::setSSLState(bool sssl)
+void R_LibESP::setSSLState(bool sssl)
 {
   sslState = sssl;
 }
 
-bool R_Lib8266::getSSLState()
+bool R_LibESP::getSSLState()
 {
   return sslState;
 }
 
-bool R_Lib8266::varCheck()
+bool R_LibESP::varCheck()
 {
   if (devState == false)
   {
@@ -404,7 +490,7 @@ bool R_Lib8266::varCheck()
   }
 }
 
-void R_Lib8266::saveOV(String oldversion)
+void R_LibESP::saveOV(String oldversion)
 {
   EEPROM.begin(4096);
   Serial.println("[ULProtection] Saving old version number to EEPROM...");
@@ -425,7 +511,7 @@ void R_Lib8266::saveOV(String oldversion)
   }
 }
 
-String R_Lib8266::loadOV()
+String R_LibESP::loadOV()
 {
   String oldVersion;
   EEPROM.begin(4096);
@@ -444,7 +530,7 @@ String R_Lib8266::loadOV()
   return oldVersion;
 }
 
-String R_Lib8266::checkUpdate()
+String R_LibESP::checkUpdate()
 {
   const int maxFiles = 100;
   String fileNames[maxFiles];
@@ -467,44 +553,44 @@ String R_Lib8266::checkUpdate()
   }
   if (sslState == true)
   {
-    R_Lib8266::SSLSetup();
+    R_LibESP::SSLSetup();
     if (insecureState == true)
     {
-      secureupdatewificlient.setInsecure();
+      RLibSecureWifiClient.setInsecure();
       Serial.println("[Secure Update] WARNING! Insecure mode activated! Certificate will not be checked!");
     }
-    http.begin(secureupdatewificlient, url);
+    RLibHttpClient.begin(RLibSecureWifiClient, url);
     Serial.println("[Secure Update] SSL enabled!");
   }
   else
   {
-    http.begin(updatewificlient, url);
+    RLibHttpClient.begin(RLibWifiClient, url);
   }
 
-  int httpResponseCode = http.GET();
+  int httpResponseCode = RLibHttpClient.GET();
   if (httpResponseCode == 301)
   {
     // Follow the redirect to the new URL
-    String newUrl = http.getString().substring(9);
-    http.end();
+    String newUrl = RLibHttpClient.getString().substring(9);
+    RLibHttpClient.end();
     if (sslState == true)
     {
       if (insecureState == true)
       {
-        secureupdatewificlient.setInsecure();
+        RLibSecureWifiClient.setInsecure();
         Serial.println("[Secure Update] WARNING! Insecure mode activated! Certificate will not be checked!");
       }
-      http.begin(secureupdatewificlient, newUrl);
+      RLibHttpClient.begin(RLibSecureWifiClient, newUrl);
     }
     else
     {
-      http.begin(updatewificlient, newUrl);
+      RLibHttpClient.begin(RLibWifiClient, newUrl);
     }
-    httpResponseCode = http.GET();
+    httpResponseCode = RLibHttpClient.GET();
   }
   if (httpResponseCode == 200)
   {
-    String response = http.getString();
+    String response = RLibHttpClient.getString();
     int linkStart = response.indexOf("<a href=");
     while (linkStart != -1)
     {
@@ -530,14 +616,14 @@ String R_Lib8266::checkUpdate()
       // Find the next link
       linkStart = response.indexOf("<a href=", linkEnd);
     }
-    http.end(); // Close HTTP connection
+    RLibHttpClient.end(); // Close HTTP connection
     if (sslState == true)
     {
-      secureupdatewificlient.stop();
+      RLibSecureWifiClient.stop();
     }
     else
     {
-      updatewificlient.stop();
+      RLibWifiClient.stop();
     }
     // Print the saved file names
     Serial.println("[Update] Files found:");
@@ -628,14 +714,14 @@ String R_Lib8266::checkUpdate()
   }
 }
 
-String R_Lib8266::performUpdate()
+String R_LibESP::performUpdate()
 {
   if (sslState == true)
   {
-    R_Lib8266::SSLSetup();
+    R_LibESP::SSLSetup();
     if (insecureState == true)
     {
-      secureupdatewificlient.setInsecure();
+      RLibSecureWifiClient.setInsecure();
       Serial.println("[Secure Update] WARNING! Insecure mode activated! Certificate will not be checked!");
     }
   }
@@ -698,6 +784,7 @@ String R_Lib8266::performUpdate()
   t_httpUpdate_return ret;
   while (true)
   {
+#if defined(ESP8266)
     ESPhttpUpdate.onStart([this]()
                           { updateStarted(); });
     ESPhttpUpdate.onEnd([this]()
@@ -708,11 +795,11 @@ String R_Lib8266::performUpdate()
                           { updateError(err); });
     if (sslState == true)
     {
-      ret = ESPhttpUpdate.update(secureupdatewificlient, binLink);
+      ret = ESPhttpUpdate.update(RLibSecureWifiClient, binLink);
     }
     else
     {
-      ret = ESPhttpUpdate.update(updatewificlient, binLink);
+      ret = ESPhttpUpdate.update(RLibWifiClient, binLink);
     }
     switch (ret)
     {
@@ -721,7 +808,31 @@ String R_Lib8266::performUpdate()
       Serial.printf("(%d): %s\r", ESPhttpUpdate.getLastError(), ESPhttpUpdate.getLastErrorString().c_str());
       return "HTTP_ERROR";
       break;
-
+#elif defined(ESP32)
+    httpUpdate.onStart([this]()
+                       { updateStarted(); });
+    httpUpdate.onEnd([this]()
+                     { updateFinished(); });
+    httpUpdate.onProgress([this](int cur, int total)
+                          { updateProgress(cur, total); });
+    httpUpdate.onError([this](int err)
+                       { updateError(err); });
+    if (sslState == true)
+    {
+      ret = httpUpdate.update(RLibSecureWifiClient, binLink);
+    }
+    else
+    {
+      ret = httpUpdate.update(RLibWifiClient, binLink);
+    }
+    switch (ret)
+    {
+    case HTTP_UPDATE_FAILED:
+      Serial.print("[Update] HTTP_UPDATE_FAILED Error ");
+      Serial.printf("(%d): %s\r", httpUpdate.getLastError(), httpUpdate.getLastErrorString().c_str());
+      return "HTTP_ERROR";
+      break;
+#endif
     case HTTP_UPDATE_NO_UPDATES:
       return "HTTP_UPDATE_NO_UPDATES";
       break;
@@ -734,22 +845,22 @@ String R_Lib8266::performUpdate()
   }
 }
 
-void R_Lib8266::setSSLRootCertificate(char certificate[])
+void R_LibESP::setSSLRootCertificate(char certificate[])
 {
   strcpy(rootCACertificate, certificate);
 }
 
-void R_Lib8266::setSSLInsecureState(bool sinsecure)
+void R_LibESP::setSSLInsecureState(bool sinsecure)
 {
   insecureState = sinsecure;
 }
 
-bool R_Lib8266::getSSLInsecureState()
+bool R_LibESP::getSSLInsecureState()
 {
   return insecureState;
 }
 
-String R_Lib8266::dataTransmission(String status)
+String R_LibESP::dataTransmission(String status)
 {
 
   String postData = dlLink + "datareceive.php?mac=" + WiFi.macAddress() + "&devicename=" + deviceName + "&fwver=" + version + "&status=" + urlEncode(status);
@@ -757,17 +868,17 @@ String R_Lib8266::dataTransmission(String status)
   {
     if (insecureState == true)
     {
-      secureupdatewificlient.setInsecure();
+      RLibSecureWifiClient.setInsecure();
       Serial.println("[Secure Update] WARNING! Insecure mode activated! Certificate will not be checked!");
     }
-    http.begin(secureupdatewificlient, postData);
+    RLibHttpClient.begin(RLibSecureWifiClient, postData);
   }
   else
   {
-    http.begin(updatewificlient, postData);
+    RLibHttpClient.begin(RLibWifiClient, postData);
   }
   delay(10);
-  int httpCode = http.GET();
+  int httpCode = RLibHttpClient.GET();
   if (httpCode == 200)
   {
     Serial.println("[Update] UserData successfully transmitted!");
@@ -780,17 +891,17 @@ String R_Lib8266::dataTransmission(String status)
   }
 }
 
-void R_Lib8266::setAttemptsBeforeInsecureSSL(int sattempts)
+void R_LibESP::setAttemptsBeforeInsecureSSL(int sattempts)
 {
   attemptsBeforeInsecureSSL = sattempts;
 }
 
-int R_Lib8266::getAttemptsBeforeInsecureSSL()
+int R_LibESP::getAttemptsBeforeInsecureSSL()
 {
   return attemptsBeforeInsecureSSL;
 }
 
-void R_Lib8266::executeAttemptsBeforeInsecureSSL()
+void R_LibESP::executeAttemptsBeforeInsecureSSL()
 {
   if (attemptsBeforeInsecureSSL > 0)
   {
@@ -824,37 +935,44 @@ void R_Lib8266::executeAttemptsBeforeInsecureSSL()
   }
 }
 
-String R_Lib8266::urlEncode(String str)
+String R_LibESP::urlEncode(String str)
 {
-    String encodedString="";
-    char c;
-    char code0;
-    char code1;
-    char code2;
-    for (int i =0; i < str.length(); i++){
-      c=str.charAt(i);
-      if (c == ' '){
-        encodedString+= '+';
-      } else if (isalnum(c)){
-        encodedString+=c;
-      } else{
-        code1=(c & 0xf)+'0';
-        if ((c & 0xf) >9){
-            code1=(c & 0xf) - 10 + 'A';
-        }
-        c=(c>>4)&0xf;
-        code0=c+'0';
-        if (c > 9){
-            code0=c - 10 + 'A';
-        }
-        code2='\0';
-        encodedString+='%';
-        encodedString+=code0;
-        encodedString+=code1;
-        //encodedString+=code2;
-      }
-      yield();
+  String encodedString = "";
+  char c;
+  char code0;
+  char code1;
+  // char code2;
+  for (int i = 0; i < str.length(); i++)
+  {
+    c = str.charAt(i);
+    if (c == ' ')
+    {
+      encodedString += '+';
     }
-    return encodedString;
-    
+    else if (isalnum(c))
+    {
+      encodedString += c;
+    }
+    else
+    {
+      code1 = (c & 0xf) + '0';
+      if ((c & 0xf) > 9)
+      {
+        code1 = (c & 0xf) - 10 + 'A';
+      }
+      c = (c >> 4) & 0xf;
+      code0 = c + '0';
+      if (c > 9)
+      {
+        code0 = c - 10 + 'A';
+      }
+      // code2 = '\0';
+      encodedString += '%';
+      encodedString += code0;
+      encodedString += code1;
+      // encodedString+=code2;
+    }
+    yield();
+  }
+  return encodedString;
 }

@@ -1,19 +1,32 @@
-#ifndef R_Lib8266_h
-#define R_Lib8266_h
+#ifndef R_LibESP_h
+#define R_LibESP_h
 
 #include <Arduino.h>
+#include <DNSServer.h>
+#include <EEPROM.h>
+#include <time.h>
+
+#if defined(ESP8266)
 #include <ESP8266WiFi.h>
 #include <ESP8266HTTPClient.h>
 #include <ESP8266httpUpdate.h>
 #include <ESP8266WebServer.h>
-#include <EEPROM.h>
-#include <time.h>
-#include "R-Lib8266.h"
+#elif defined(ESP32)
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <HttpUpdate.h>
+#include <WebServer.h>
+#include <WiFiClientSecure.h>
+#include <Preferences.h>
+#else
+#error "This is not an Espressif board!"
+#endif
+#include "R-LibESP.h"
 
-class R_Lib8266
+class R_LibESP
 {
 public:
-    R_Lib8266();
+    R_LibESP();
     String checkUpdate();
     String split(String s, char parser, int index);
     String performUpdate();
@@ -24,7 +37,6 @@ public:
     void connectWIFIUser(String ssid, String password);
     void createWebServer();
     String getLibVersion();
-    void connectWIFIUserHandle();
     void endWIFIUser();
     void setDeviceName(String DevName);
     String getDeviceName();
@@ -54,6 +66,7 @@ public:
     int getAttemptsBeforeInsecureSSL();
     void executeAttemptsBeforeInsecureSSL();
     String urlEncode(String str);
+    void connectWIFIUserHandle();
 
 private:
 };

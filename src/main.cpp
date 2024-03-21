@@ -1,18 +1,18 @@
 #include <Arduino.h>
-#include "R-Lib8266.h"
-R_Lib8266 rlib;
+#include "R-LibESP.h"
+R_LibESP rlib;
 void setup()
 {
    // R_LIB SETUP
    rlib.setDeviceName("TestDevice");
-   rlib.setVersion("v1.0.1a");
+   rlib.setVersion("v1.0.2a");
    rlib.setDlLink("https://dl.timfischbach.com/prv/firmware/testdevice/");
    rlib.setSSLState(true);
    rlib.setAttemptsBeforeInsecureSSL(2);
    // R_LIB SETUP END
    delay(5000);
    Serial.begin(115200);
-   Serial.print("TESTING PROGRAMM FOR R-LIB8266 ");
+   Serial.print("TESTING PROGRAMM FOR R-LIBESP ");
    Serial.println(rlib.getLibVersion());
    rlib.connectWIFI();
    int c = 0;
@@ -23,12 +23,11 @@ void setup()
    }
    if (rlib.checkWIFI() == false)
    {
-      rlib.connectWIFIUser("TestDevice", "");
+      rlib.connectWIFIUser("TestDevice", "rlibdev1");
    }
    while (rlib.checkWIFI() == false)
    {
       rlib.connectWIFIUserHandle();
-      delay(50);
    }
 }
    void loop()
