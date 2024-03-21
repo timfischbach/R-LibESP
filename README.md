@@ -1,5 +1,5 @@
 # R-LibESP
-A library for easy HTTP OTA updates with 3 sources (stable, beta, dev) and WIFI connection, used on Espressif devices by Tim Fischbach.
+A library for easy HTTP OTA updates with 3 sources (stable, beta, dev) and WIFI connection, used on Espressif devices (ESP8266, ESP32) by Tim Fischbach.
 FEATURES:
 - User based Wifi config
 - Sys intern Wifi config
