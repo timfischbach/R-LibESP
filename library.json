@@ -1,12 +1,12 @@
 {
-  "name": "R-Lib8266",
-  "version": "2.1.0",
+  "name": "R-LibESP",
+  "version": "1.0.0",
   "description": "A library for easy HTTP(s) OTA updates with 3 sources (stable, beta, dev) and WIFI connection",
-  "keywords": "WIFI, OTA, HTTP, ESP8266, HTTPS",
+  "keywords": "WIFI, OTA, HTTP, ESP8266, ESP32, HTTPS",
   "repository":
   {
     "type": "git",
-    "url": "https://github.com/timfischbach/R-Lib8266.git"
+    "url": "https://github.com/timfischbach/R-LibESP.git"
   },
   "authors":
   [
@@ -20,5 +20,5 @@
   "license": "GPL-3.0-only",
   "homepage": "https://www.timfischbach.com/",
   "frameworks": "arduino",
-  "platforms": "espressif8266"
+  "platforms": "espressif8266, espressif32"
 }
