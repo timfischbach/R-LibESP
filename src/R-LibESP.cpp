@@ -5,7 +5,7 @@ TO DO:
 */
 
 /*
-R-LibESP by Tim Fischbach
+R-LibESP by timfischbach
 Functions:
 - User based Wifi config
 - Sys intern Wifi config
@@ -41,11 +41,12 @@ R_LibESP::R_LibESP()
 {
 }
 
-const String LIBVERSION = "v1.0.0";
+const String LIBVERSION = "v1.1.0";
 
 String strInit, initLink, binLink, content, st, deviceName, version, dlLink;
 int serverStatus, statusCode;
 unsigned long prohibitUpdateMillis = 0;
+unsigned long lastDnsProcess = 0;
 bool betaState = false;
 bool updateLock = false;
 bool lockPassed = false;
@@ -55,7 +56,43 @@ bool sslState = false;
 bool insecureState = false;
 int attemptsBeforeInsecureSSL = 0;
 
+// Default Root CA Certificate is the one from Let's Encrypt (ISRG Root X1). Expires 04 Jun 2035
 char rootCACertificate[] = R"EOF(
+-----BEGIN CERTIFICATE-----
+MIIFYDCCBEigAwIBAgIQQAF3ITfU6UK47naqPGQKtzANBgkqhkiG9w0BAQsFADA/
+MSQwIgYDVQQKExtEaWdpdGFsIFNpZ25hdHVyZSBUcnVzdCBDby4xFzAVBgNVBAMT
+DkRTVCBSb290IENBIFgzMB4XDTIxMDEyMDE5MTQwM1oXDTI0MDkzMDE4MTQwM1ow
+TzELMAkGA1UEBhMCVVMxKTAnBgNVBAoTIEludGVybmV0IFNlY3VyaXR5IFJlc2Vh
+cmNoIEdyb3VwMRUwEwYDVQQDEwxJU1JHIFJvb3QgWDEwggIiMA0GCSqGSIb3DQEB
+AQUAA4ICDwAwggIKAoICAQCt6CRz9BQ385ueK1coHIe+3LffOJCMbjzmV6B493XC
+ov71am72AE8o295ohmxEk7axY/0UEmu/H9LqMZshftEzPLpI9d1537O4/xLxIZpL
+wYqGcWlKZmZsj348cL+tKSIG8+TA5oCu4kuPt5l+lAOf00eXfJlII1PoOK5PCm+D
+LtFJV4yAdLbaL9A4jXsDcCEbdfIwPPqPrt3aY6vrFk/CjhFLfs8L6P+1dy70sntK
+4EwSJQxwjQMpoOFTJOwT2e4ZvxCzSow/iaNhUd6shweU9GNx7C7ib1uYgeGJXDR5
+bHbvO5BieebbpJovJsXQEOEO3tkQjhb7t/eo98flAgeYjzYIlefiN5YNNnWe+w5y
+sR2bvAP5SQXYgd0FtCrWQemsAXaVCg/Y39W9Eh81LygXbNKYwagJZHduRze6zqxZ
+Xmidf3LWicUGQSk+WT7dJvUkyRGnWqNMQB9GoZm1pzpRboY7nn1ypxIFeFntPlF4
+FQsDj43QLwWyPntKHEtzBRL8xurgUBN8Q5N0s8p0544fAQjQMNRbcTa0B7rBMDBc
+SLeCO5imfWCKoqMpgsy6vYMEG6KDA0Gh1gXxG8K28Kh8hjtGqEgqiNx2mna/H2ql
+PRmP6zjzZN7IKw0KKP/32+IVQtQi0Cdd4Xn+GOdwiK1O5tmLOsbdJ1Fu/7xk9TND
+TwIDAQABo4IBRjCCAUIwDwYDVR0TAQH/BAUwAwEB/zAOBgNVHQ8BAf8EBAMCAQYw
+SwYIKwYBBQUHAQEEPzA9MDsGCCsGAQUFBzAChi9odHRwOi8vYXBwcy5pZGVudHJ1
+c3QuY29tL3Jvb3RzL2RzdHJvb3RjYXgzLnA3YzAfBgNVHSMEGDAWgBTEp7Gkeyxx
++tvhS5B1/8QVYIWJEDBUBgNVHSAETTBLMAgGBmeBDAECATA/BgsrBgEEAYLfEwEB
+ATAwMC4GCCsGAQUFBwIBFiJodHRwOi8vY3BzLnJvb3QteDEubGV0c2VuY3J5cHQu
+b3JnMDwGA1UdHwQ1MDMwMaAvoC2GK2h0dHA6Ly9jcmwuaWRlbnRydXN0LmNvbS9E
+U1RST09UQ0FYM0NSTC5jcmwwHQYDVR0OBBYEFHm0WeZ7tuXkAXOACIjIGlj26Ztu
+MA0GCSqGSIb3DQEBCwUAA4IBAQAKcwBslm7/DlLQrt2M51oGrS+o44+/yQoDFVDC
+5WxCu2+b9LRPwkSICHXM6webFGJueN7sJ7o5XPWioW5WlHAQU7G75K/QosMrAdSW
+9MUgNTP52GE24HGNtLi1qoJFlcDyqSMo59ahy2cI2qBDLKobkx/J3vWraV0T9VuG
+WCLKTVXkcGdtwlfFRjlBz4pYg1htmf5X6DYO8A4jqv2Il9DjXA6USbW1FzXSLr9O
+he8Y4IWS6wY7bCkjCWDcRQJMEhg76fsO3txE+FiYruq9RUWhiF1myv4Q6W+CyBFC
+Dfvp7OOGAN6dEOM4+qR9sdjoSYKEBpsr6GtPAQw4dy753ec5
+-----END CERTIFICATE-----
+)EOF";
+
+// Github Root CA Certificate. Expires 18 Jan 2038
+char githubRootCACertificate[] = R"EOF(
 -----BEGIN CERTIFICATE-----
 MIIFYDCCBEigAwIBAgIQQAF3ITfU6UK47naqPGQKtzANBgkqhkiG9w0BAQsFADA/
 MSQwIgYDVQQKExtEaWdpdGFsIFNpZ25hdHVyZSBUcnVzdCBDby4xFzAVBgNVBAMT
@@ -314,33 +351,49 @@ void R_LibESP::createWebServer()
 {
   {
     RLibHttpServer.onNotFound([]()
-                              // RLibHttpServer.on("/", [=]()
                               {
-                String networks;
-                int numNetworks = WiFi.scanNetworks();
-                if (numNetworks == 0) {
-                  networks = "<p>No networks found</p>";
-                } else {
-                  networks = "<div class='networks'>";
-                  for (int i = 0; i < numNetworks; ++i) {
-                    networks += "<div class='network'><a href='/password?ssid=" + WiFi.SSID(i) + "' class='network-name'>" + WiFi.SSID(i) + "</a></div>";
-                  }
-                  networks += "</div>";
-                }
+      String networks;
+      int numNetworks = WiFi.scanNetworks();
+      String addedSSIDs[numNetworks]; // Array to store added SSIDs
+      int addedCount = 0; // Counter for added SSIDs
+      if (numNetworks == 0) {
+        networks = "<p>No networks found</p>";
+      } else {
+        networks = "<div class='networks'>";
+        for (int i = 0; i < numNetworks; ++i) {
+          String ssid = WiFi.SSID(i);
+          bool alreadyAdded = false;
 
-                content = "<!DOCTYPE HTML>\r\n<html><head><meta name='viewport' content='width=device-width, initial-scale=1.0'>";
-                content += "<style>";
-                content += "body { font-family: Arial, sans-serif; margin: 0; padding: 0; text-align: center; background-color: #f4f4f4; }";
-                content += ".networks { display: flex; flex-wrap: wrap; justify-content: center; padding: 20px; }";
-                content += ".network { background-color: #ffffff; border-radius: 10px; padding: 15px; margin: 10px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); }";
-                content += ".network a { text-decoration: none; color: #333333; }";
-                content += ".network a:hover { color: #666666; }";
-                content += "</style></head>";
-                content += "<body><h1>Select your Wi-Fi Network</h1>";
-                content += "<p>R-LibESP " + LIBVERSION + " by Tim Fischbach running on device " + deviceName + " " + version + "</p>";
-                content += networks;
-                content += "</body></html>";
-                RLibHttpServer.send(200, "text/html", content); });
+          // Check if the SSID has already been added
+          for (int j = 0; j < addedCount; j++) {
+            if (addedSSIDs[j] == ssid) {
+              alreadyAdded = true;
+              break;
+            }
+          }
+
+          if (!alreadyAdded) {
+            addedSSIDs[addedCount] = ssid; // Add the SSID to the array
+            addedCount++;
+
+            networks += "<div class='network'><a href='/password?ssid=" + ssid + "' class='network-name'>" + ssid + "</a></div>";
+          }
+        }
+        networks += "</div>";
+      }
+      content = "<!DOCTYPE HTML>\r\n<html><head><meta name='viewport' content='width=device-width, initial-scale=1.0'>";
+      content += "<style>";
+      content += "body { font-family: Arial, sans-serif; margin: 0; padding: 0; text-align: center; background-color: #f4f4f4; }";
+      content += ".networks { display: flex; flex-wrap: wrap; justify-content: center; padding: 20px; }";
+      content += ".network { background-color: #ffffff; border-radius: 10px; padding: 15px; margin: 10px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); }";
+      content += ".network a { text-decoration: none; color: #333333; }";
+      content += ".network a:hover { color: #666666; }";
+      content += "</style></head>";
+      content += "<body><h1>Select your Wi-Fi Network</h1>";
+      content += "<p>R-LibESP " + LIBVERSION + " by timfischbach running on device " + deviceName + " " + version + "</p>";
+      content += networks;
+      content += "</body></html>";
+      RLibHttpServer.send(200, "text/html", content); });
 
     RLibHttpServer.on("/password", [=]()
                       {
@@ -382,8 +435,12 @@ void R_LibESP::createWebServer()
 #if defined(ESP8266)
                         ESP.reset();
 #elif defined(ESP32)
-          ESP.restart();
+                        ESP.restart();
 #endif
+                      });
+    RLibHttpServer.on("/favicon.ico", []()
+                      {
+                        RLibHttpServer.send(204, "text/plain", ""); // No Content
                       });
   }
 }
@@ -391,7 +448,11 @@ void R_LibESP::createWebServer()
 void R_LibESP::connectWIFIUserHandle()
 {
   RLibHttpServer.handleClient();
-  RLibDnsServer.processNextRequest();
+  if (millis() - lastDnsProcess > 100)
+  { // Process DNS every 100ms instead of every loop
+    RLibDnsServer.processNextRequest();
+    lastDnsProcess = millis();
+  }
 }
 
 String R_LibESP::getLibVersion()
@@ -404,9 +465,9 @@ void R_LibESP::endWIFIUser()
   RLibHttpServer.stop();
 }
 
-void R_LibESP::setDeviceName(String DevName)
+void R_LibESP::setDeviceName(String inputDeviceName)
 {
-  deviceName = DevName;
+  deviceName = inputDeviceName;
 }
 
 String R_LibESP::getDeviceName()
@@ -414,9 +475,9 @@ String R_LibESP::getDeviceName()
   return deviceName;
 }
 
-void R_LibESP::setVersion(String ver)
+void R_LibESP::setVersion(String inputVersion)
 {
-  version = ver;
+  version = inputVersion;
 }
 
 String R_LibESP::getVersion()
@@ -424,9 +485,9 @@ String R_LibESP::getVersion()
   return version;
 }
 
-void R_LibESP::setDlLink(String DLL)
+void R_LibESP::setDlLink(String downloadLink)
 {
-  dlLink = DLL;
+  dlLink = downloadLink;
 }
 
 String R_LibESP::getDlLink()
