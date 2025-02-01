@@ -18,6 +18,7 @@ CHECK THE WIKI FOR MORE INFOS.
 TO DO:
 - Github Integration
 - MD5 Check instead of Version check -> ULProtection deprecation
+- Replacement of EEPROM Lib on the ESP8266 with Preferences.h
 
 
 TO EVENTUALLY DO:
