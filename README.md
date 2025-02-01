@@ -14,3 +14,12 @@ IMPORTANT: WHEN USING THIS LIBRARY, MAKE SURE NOT TO USE EEPROM BYTES 4084 - 409
 CHECK THE WIKI FOR MORE INFOS.
 
 # CURRENTLY ONLY WORKING WITH PLATFORMIO. Arduino IDE Release halted...
+
+TO DO:
+- Github Integration
+- MD5 Check instead of Version check -> ULProtection deprecation
+TO EVENTUALLY DO:
+- (WebMGMTServer)
+- (Config MGMT)
+- (Rebranding into R-ESPOTA Library)
+- (Arduino IDE Release)
